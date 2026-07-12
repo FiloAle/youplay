@@ -22,6 +22,8 @@ interface PlayerContextType {
 	addToQueue: (video: VideoInfo) => void;
 	removeFromQueue: (index: number) => void;
 	playNext: () => Promise<void>;
+	isVideoMode: boolean;
+	toggleVideoMode: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -30,16 +32,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [queue, setQueue] = useState<VideoInfo[]>([]);
+	const [isVideoMode, setIsVideoMode] = useState(false);
 
 	const player = useVideoPlayer(null);
 
 	useEffect(() => {
+		if (player) {
+			player.staysActiveInBackground = true;
+		}
 		setAudioModeAsync({
 			playsInSilentMode: true,
 			shouldPlayInBackground: true,
 			interruptionMode: "doNotMix",
 		});
-	}, []);
+	}, [player]);
 
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
@@ -99,16 +105,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const playVideo = async (video: VideoInfo) => {
 		setIsLoading(true);
 		setCurrentVideo(video);
+		player.pause();
 
 		try {
-			const streamInfo = await youtubeService.getAudioStream(video.videoId);
+			const streamPromise = youtubeService.getAudioStream(video.videoId);
+			
+			const hq720 = `https://i.ytimg.com/vi/${video.videoId}/hq720.jpg`;
+			const fallbackArtwork = `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`;
+			const artworkPromise = fetch(hq720, { method: "HEAD" })
+				.then(res => res.ok ? hq720 : fallbackArtwork)
+				.catch(() => fallbackArtwork);
+
+			const [streamInfo, bestArtwork] = await Promise.all([streamPromise, artworkPromise]);
+
 			if (streamInfo && streamInfo.url) {
-				await player.replaceAsync(streamInfo.url);
+				await player.replaceAsync({
+					uri: streamInfo.url,
+					metadata: {
+						title: video.title,
+						artist: video.channelName || "YouTube Podcast",
+						artwork: bestArtwork,
+					}
+				});
 				player.play();
-				// expo-video supporta i metadata per il control center
 				player.showNowPlayingNotification = true;
-				// In SDK 56 potremmo dover usare moduli specifici per i metadati,
-				// ma per ora avviamo lo stream
 			} else {
 				Alert.alert("Errore", "Nessun flusso compatibile trovato.");
 				setCurrentVideo(null);
@@ -133,6 +153,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		player.currentTime = time;
 	};
 
+	const toggleVideoMode = async () => {
+		if (!currentVideo) return;
+		setIsVideoMode(!isVideoMode);
+	};
+
 	return (
 		<PlayerContext.Provider
 			value={{
@@ -147,6 +172,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				addToQueue,
 				removeFromQueue,
 				playNext,
+				isVideoMode,
+				toggleVideoMode,
 			}}
 		>
 			{children}

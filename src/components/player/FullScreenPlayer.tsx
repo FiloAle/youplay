@@ -44,9 +44,10 @@ export default function FullScreenPlayer({ onClose }: Props) {
 		removeFromQueue,
 		playVideo,
 		player,
+		isVideoMode,
+		toggleVideoMode,
 	} = usePlayer();
 	const [showQueue, setShowQueue] = useState(false);
-	const [isVideoMode, setIsVideoMode] = useState(false);
 
 	const videoRef = useRef<VideoView>(null);
 
@@ -63,8 +64,15 @@ export default function FullScreenPlayer({ onClose }: Props) {
 	useEffect(() => {
 		// Use manual interval to sync time since useEvent for timeUpdate might not trigger fast enough or needs explicit config
 		const interval = setInterval(() => {
-			if (player && player.playing) {
-				setCurrentTime(player.currentTime);
+			if (player) {
+				if (player.playing) {
+					setCurrentTime(player.currentTime);
+				}
+				
+				// Prevent constant stalling when catching up to a live stream
+				if (player.isLive && player.playbackRate > 1 && (player.currentOffsetFromLive ?? 0) < 15) {
+					player.playbackRate = 1;
+				}
 			}
 		}, 500);
 		return () => clearInterval(interval);
@@ -73,16 +81,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 	const currentSpeed =
 		playbackRateEvent?.playbackRate ?? player.playbackRate ?? 1;
 
-	const handleSpeedChange = () => {
-		let nextSpeed = 1;
-		if (currentSpeed < 1.25) nextSpeed = 1.25;
-		else if (currentSpeed < 1.5) nextSpeed = 1.5;
-		else if (currentSpeed < 2) nextSpeed = 2;
-		else if (currentSpeed < 2.5) nextSpeed = 2.5;
-		else nextSpeed = 1;
 
-		player.playbackRate = nextSpeed;
-	};
 
 	const colorScheme = useColorScheme();
 	const colors =
@@ -92,10 +91,16 @@ export default function FullScreenPlayer({ onClose }: Props) {
 	if (!currentVideo) return null;
 
 	const isPlaying = isPlayingEvent.isPlaying;
-	const duration =
-		currentVideo.durationSeconds > 0
-			? currentVideo.durationSeconds
-			: (player.duration ?? 0);
+	const isLive = player.isLive;
+	const liveOffset = player.currentOffsetFromLive ?? 0;
+	
+	let duration = currentVideo.durationSeconds > 0 ? currentVideo.durationSeconds : (player.duration ?? 0);
+	if (isLive) {
+		duration = currentTime + liveOffset;
+	}
+	if (isNaN(duration) || duration <= 0) {
+		duration = 0;
+	}
 
 	const handlePlayPause = () => {
 		if (isPlaying) pause();
@@ -120,6 +125,18 @@ export default function FullScreenPlayer({ onClose }: Props) {
 			: progressPercent;
 	const displayTime = dragTime !== null ? dragTime : currentTime;
 	const remainingTime = Math.max(0, duration - displayTime);
+	const isAtLiveEdge = isLive && remainingTime <= 15;
+
+	const handleSpeedChange = () => {
+		if (isAtLiveEdge) return;
+		let nextSpeed = 1;
+		if (currentSpeed < 1.5) nextSpeed = 1.5;
+		else if (currentSpeed < 2) nextSpeed = 2;
+		else if (currentSpeed < 2.5 && !isLive) nextSpeed = 2.5;
+		else nextSpeed = 1;
+
+		player.playbackRate = nextSpeed;
+	};
 
 	const screenHeight = Dimensions.get("window").height;
 	const screenWidth = Dimensions.get("window").width;
@@ -242,6 +259,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 								<Image
 									source={{ uri: currentVideo.thumbnailUrl }}
 									style={styles.albumArt}
+									resizeMode="cover"
 								/>
 							)}
 
@@ -253,7 +271,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 									style={styles.overlayChip}
 								>
 									<Pressable
-										onPress={() => setIsVideoMode(!isVideoMode)}
+										onPress={() => toggleVideoMode()}
 										style={{
 											flexDirection: "row",
 											alignItems: "center",
@@ -348,8 +366,12 @@ export default function FullScreenPlayer({ onClose }: Props) {
 							if (barWidth > 0 && duration > 0) {
 								let newTime = (e.nativeEvent.x / barWidth) * duration;
 								newTime = Math.max(0, Math.min(newTime, duration));
+								if (isLive && newTime >= duration - 10) {
+									newTime = Math.max(0, duration - 10);
+								}
 								seekTo(newTime);
 								setDragTime(null);
+								if (isPlaying) player.play();
 							}
 						}
 					}}
@@ -359,7 +381,12 @@ export default function FullScreenPlayer({ onClose }: Props) {
 						onPress={(e) => {
 							if (barWidth > 0 && duration > 0) {
 								let newTime = (e.nativeEvent.locationX / barWidth) * duration;
-								seekTo(Math.max(0, Math.min(newTime, duration)));
+								newTime = Math.max(0, Math.min(newTime, duration));
+								if (isLive && newTime >= duration - 10) {
+									newTime = Math.max(0, duration - 10);
+								}
+								seekTo(newTime);
+								if (isPlaying) player.play();
 							}
 						}}
 					>
@@ -388,7 +415,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 						{formatTime(displayTime)}
 					</ThemedText>
 					<ThemedText type="small" style={{ color: "rgba(255,255,255,0.7)" }}>
-						-{formatTime(remainingTime)}
+						{isLive && remainingTime <= 15 ? "DAL VIVO" : `-${formatTime(remainingTime)}`}
 					</ThemedText>
 				</View>
 			</View>
@@ -401,6 +428,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 						height: 44,
 						justifyContent: "center",
 						alignItems: "center",
+						opacity: isAtLiveEdge ? 0.4 : 1,
 					}}
 				>
 					<Button

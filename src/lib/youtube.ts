@@ -289,11 +289,12 @@ class YouTubeService {
 			}
 		}
 
-		const thumbImages = video.content_image?.image ?? [];
-		const thumbnailUrl =
-			Array.isArray(thumbImages) && thumbImages.length > 0
-				? thumbImages[0].url
-				: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+		let thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+		if (video.content_image?.image?.length > 0) {
+			thumbnailUrl = video.content_image.image[0].url;
+		} else if (video.thumbnails?.length > 0) {
+			thumbnailUrl = video.thumbnails[video.thumbnails.length - 1].url;
+		}
 
 		return {
 			title,
@@ -537,15 +538,32 @@ class YouTubeService {
 	}
 
 	async getAudioStream(videoId: string): Promise<AudioStreamInfo | null> {
-		// Use a fresh client: stream URLs from YouTube expire quickly and a cached
-		// Innertube session may return already-expired signed URLs.
 		const yt = await this.freshClient();
 
-		try {
-			const info = await yt.getBasicInfo(videoId, {
-				client: "ANDROID_VR",
-			});
+		let info;
+		// Usiamo ANDROID_VR come prima scelta perché non dà errore 403 con l'AVPlayer di iOS.
+		const clients = ["ANDROID_VR", "ANDROID", "IOS", "WEB"];
+		for (const client of clients) {
+			try {
+				info = await yt.getBasicInfo(videoId, { client: client as any });
+				
+				const hasAudioUrl = (info?.streaming_data?.adaptive_formats ?? []).some(
+					(f: any) => f.has_audio && !f.has_video && (f.url || f.signature_cipher || f.cipher)
+				);
+				
+				if (hasAudioUrl || client === "ANDROID_VR") {
+					console.log(`[YouTube] Client selezionato: ${client} (hasAudioUrl: ${hasAudioUrl})`);
+					break;
+				}
+			} catch (e) {
+				console.log(`[YouTube] Client ${client} fallito, provo il prossimo...`);
+				continue;
+			}
+		}
 
+		if (!info) throw new Error("Impossibile recuperare le info del video.");
+
+		try {
 			if (info.playability_status?.status === "UNPLAYABLE") {
 				throw new Error(
 					info.playability_status.reason ||
@@ -560,15 +578,28 @@ class YouTubeService {
 			}
 
 			const progressive = (info.streaming_data?.formats ?? []).filter(
-				(f: any) => f.has_audio && f.url,
+				(f: any) => f.has_audio && (f.has_video || f.width > 0) && (f.url || f.signature_cipher || f.cipher),
 			);
 
-			// Ritorna direttamente il formato progressive (MP4 con audio + video)
 			if (progressive.length > 0) {
-				// Cerca il formato a qualità più bassa/accettabile per non consumare troppa banda
-				const fmt = progressive.sort((a: any, b: any) => (a.height ?? 0) - (b.height ?? 0))[0];
+				// Find highest quality that is <= 720p to save bandwidth, or highest available
+				const fmt = progressive.sort((a: any, b: any) => {
+					const aHeight = a.height ?? 0;
+					const bHeight = b.height ?? 0;
+					if (aHeight <= 720 && bHeight > 720) return -1;
+					if (bHeight <= 720 && aHeight > 720) return 1;
+					return bHeight - aHeight;
+				})[0];
+				
+				console.log(`[YouTube] Formato PROGRESSIVE (AV) selezionato: ${fmt.mime_type} (${fmt.height}p)`);
+				
+				let finalUrl = fmt.url;
+				if (!finalUrl && (fmt.signature_cipher || fmt.cipher) && typeof fmt.decipher === 'function') {
+					finalUrl = await fmt.decipher(yt.session.player);
+				}
+
 				return {
-					url: fmt.url ?? "",
+					url: finalUrl ?? "",
 					codec: "progressive",
 					mimeType: fmt.mime_type,
 					bitrate: fmt.bitrate ?? 0,
@@ -591,7 +622,7 @@ class YouTubeService {
 				};
 			}
 
-			throw new Error("Nessun flusso audio compatibile trovato");
+			throw new Error("Nessun flusso audio/video compatibile trovato");
 		} catch (e: any) {
 			throw e;
 		}
