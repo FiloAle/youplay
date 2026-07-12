@@ -1,3 +1,4 @@
+import EmptyState from "@/components/EmptyState";
 import EpisodeCard from "@/components/EpisodeCard";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { VideoInfo, parseRelativeDate, youtubeService } from "@/lib/youtube";
@@ -20,6 +21,8 @@ export default function HomeScreen() {
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 
+	const generationRef = React.useRef(0);
+
 	const scrollY = React.useRef(new Animated.Value(0)).current;
 
 	const titleOpacity = scrollY.interpolate({
@@ -28,26 +31,32 @@ export default function HomeScreen() {
 		extrapolate: "clamp",
 	});
 
-	const loadFeed = async () => {
+	const loadFeed = async (isRefresh = false) => {
 		if (subscriptions.length === 0) {
 			setFeed([]);
 			setIsLoading(false);
+			setIsRefreshing(false);
 			return;
 		}
 
+		generationRef.current += 1;
+		const currentGeneration = generationRef.current;
+
+		if (!isRefresh) {
+			setIsLoading(true);
+			setFeed([]);
+		}
+
 		try {
-			const results = await Promise.allSettled(
-				subscriptions.map((sub) => youtubeService.getChannelVideos(sub.id)),
-			);
-
-			let allVideos: VideoInfo[] = [];
-			results.forEach((result) => {
-				if (result.status === "fulfilled") {
-					allVideos = allVideos.concat(result.value.slice(0, 10));
-				}
-			});
-
-			allVideos.sort((a, b) => {
+			// Phase 1: Rapid parallel RSS fetch
+			const rssPromises = subscriptions.map(sub => youtubeService.getRecentChannelVideosRss(sub.id));
+			const results = await Promise.all(rssPromises);
+			
+			if (generationRef.current !== currentGeneration) return;
+			
+			const newFeed = results.flat();
+			const uniqueFeed = Array.from(new Map(newFeed.map(v => [v.videoId, v])).values());
+			uniqueFeed.sort((a, b) => {
 				const dateA = parseRelativeDate(a.publishedDate);
 				const dateB = parseRelativeDate(b.publishedDate);
 				if (dateA === dateB) return 0;
@@ -55,24 +64,41 @@ export default function HomeScreen() {
 				if (dateB === Infinity) return -1;
 				return dateA - dateB;
 			});
-
-			setFeed(allVideos);
-		} catch (e) {
-			console.error(e);
-		} finally {
+			
+			const validChannelIds = new Set(subscriptions.map(s => s.id));
+			const finalFeed = uniqueFeed.filter(v => validChannelIds.has(v.channelId ?? ""));
+			
+			setFeed(finalFeed);
+			
+			// Instant UI unlock
 			setIsLoading(false);
 			setIsRefreshing(false);
+			
+			// Phase 2: Background Duration Updates
+			for await (const updatedFeed of youtubeService.enrichVideoDetails(finalFeed, () => generationRef.current !== currentGeneration)) {
+				if (generationRef.current !== currentGeneration) break;
+				setFeed(updatedFeed);
+			}
+			
+		} catch (e) {
+			console.error("Feed load error:", e);
+			if (generationRef.current === currentGeneration) {
+				setIsLoading(false);
+				setIsRefreshing(false);
+			}
 		}
 	};
 
 	useEffect(() => {
-		setIsLoading(true);
-		loadFeed();
+		loadFeed(false);
+		return () => {
+			generationRef.current += 1;
+		};
 	}, [subscriptions]);
 
 	const onRefresh = useCallback(() => {
 		setIsRefreshing(true);
-		loadFeed();
+		loadFeed(true);
 	}, [subscriptions]);
 
 	const renderVideo = ({ item }: { item: VideoInfo }) => (
@@ -99,13 +125,11 @@ export default function HomeScreen() {
 			</Animated.View>
 
 			{subscriptions.length === 0 ? (
-				<View style={styles.emptyContainer}>
-					<Ionicons name="home-outline" size={64} color="#666" />
-					<Text style={styles.emptyText}>La tua home è vuota</Text>
-					<Text style={styles.emptySubtext}>
-						Segui qualche canale per vederne gli ultimi episodi qui
-					</Text>
-				</View>
+				<EmptyState
+					icon="house"
+					title="La tua home è vuota"
+					subtitle="Segui qualche canale per vederne gli ultimi episodi qui"
+				/>
 			) : isLoading ? (
 				<View style={styles.loadingContainer}>
 					<ActivityIndicator size="large" color="#fff" />

@@ -1,11 +1,16 @@
+import EmptyState from "@/components/EmptyState";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { ChannelInfo } from "@/lib/youtube";
+import { ContextMenu, Menu, Button, Host } from "@expo/ui/swift-ui";
 import { Ionicons } from "@expo/vector-icons";
+import { GlassView } from "expo-glass-effect";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { SymbolView } from "expo-symbols";
 import React from "react";
 import {
+	ActionSheetIOS,
 	Animated,
 	Pressable,
 	RefreshControl,
@@ -15,7 +20,13 @@ import {
 } from "react-native";
 
 export default function FollowedScreen() {
-	const { subscriptions, refreshSubscriptions } = useSubscriptions();
+	const {
+		subscriptions,
+		refreshSubscriptions,
+		exportSubscriptions,
+		importSubscriptions,
+		toggleSubscription,
+	} = useSubscriptions();
 	const [isRefreshing, setIsRefreshing] = React.useState(false);
 
 	const scrollY = React.useRef(new Animated.Value(0)).current;
@@ -33,23 +44,46 @@ export default function FollowedScreen() {
 	}, [refreshSubscriptions]);
 
 	const renderChannel = ({ item }: { item: ChannelInfo }) => (
-		<Pressable
-			style={styles.channelCard}
-			onPress={() => router.push(`/followed/channel/${item.id}`)}
-		>
-			<Image
-				source={{ uri: item.thumbnail }}
-				style={styles.channelThumbnail}
-				contentFit="cover"
-			/>
-			<View style={styles.channelInfo}>
-				<Text style={styles.channelName} numberOfLines={1}>
-					{item.name}
-				</Text>
-				<Text style={styles.channelSubscribers}>{item.subscribers}</Text>
-			</View>
-			<Ionicons name="chevron-forward" size={20} color="#666" />
-		</Pressable>
+		<Host>
+			<ContextMenu>
+				<ContextMenu.Trigger>
+					<Pressable
+						style={styles.channelCard}
+						onPress={() => router.push(`/followed/channel/${item.id}`)}
+					>
+						<Image
+							source={{ uri: item.thumbnail }}
+							style={styles.channelThumbnail}
+							contentFit="cover"
+						/>
+						<View style={styles.channelInfo}>
+							<Text style={styles.channelName} numberOfLines={1}>
+								{item.name}
+							</Text>
+							<Text style={styles.channelSubscribers}>{item.subscribers}</Text>
+						</View>
+						<Ionicons name="chevron-forward" size={20} color="#666" />
+					</Pressable>
+				</ContextMenu.Trigger>
+
+				<ContextMenu.Items>
+					<Button
+						role="destructive"
+						onPress={() => {
+							toggleSubscription({
+								id: item.id,
+								name: item.name,
+								thumbnail: item.thumbnail,
+								subscribers: item.subscribers,
+								description: item.description || "",
+							});
+						}}
+						systemImage="trash"
+						label="Smetti di seguire"
+					/>
+				</ContextMenu.Items>
+			</ContextMenu>
+		</Host>
 	);
 
 	return (
@@ -62,19 +96,39 @@ export default function FollowedScreen() {
 
 			<Animated.View
 				style={[styles.header, { opacity: titleOpacity }]}
-				pointerEvents="none"
+				pointerEvents="box-none"
 			>
 				<Text style={styles.headerTitle}>Seguiti</Text>
+				<View style={styles.headerActions}>
+					<Host>
+						<Menu
+							label={
+								<GlassView style={styles.iconButton} glassEffectStyle="regular" pointerEvents="none">
+									<SymbolView name="ellipsis" size={20} tintColor="#fff" />
+								</GlassView>
+							}
+						>
+							<Button
+								onPress={importSubscriptions}
+								systemImage="square.and.arrow.down"
+								label="Importa"
+							/>
+							<Button
+								onPress={exportSubscriptions}
+								systemImage="square.and.arrow.up"
+								label="Esporta"
+							/>
+						</Menu>
+					</Host>
+				</View>
 			</Animated.View>
 
 			{subscriptions.length === 0 ? (
-				<View style={styles.emptyContainer}>
-					<Ionicons name="people-outline" size={64} color="#666" />
-					<Text style={styles.emptyText}>Non segui ancora nessun canale</Text>
-					<Text style={styles.emptySubtext}>
-						Cerca i tuoi podcast preferiti e tocca "Segui" per ritrovarli qui
-					</Text>
-				</View>
+				<EmptyState
+					icon="rectangle.stack"
+					title="Non segui ancora nessun canale"
+					subtitle="Cerca i tuoi podcast preferiti e tocca 'Segui' per ritrovarli qui"
+				/>
 			) : (
 				<Animated.FlatList
 					data={subscriptions}
@@ -123,12 +177,28 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 20,
 		paddingTop: 60,
 		paddingBottom: 20,
+		flexDirection: "row",
+		alignItems: "flex-end",
+		justifyContent: "space-between",
 	},
 	headerTitle: {
 		color: "white",
 		fontSize: 34,
 		fontWeight: "bold",
 		letterSpacing: 0.4,
+	},
+	headerActions: {
+		flexDirection: "row",
+		gap: 10,
+		paddingBottom: 4,
+	},
+	iconButton: {
+		width: 34,
+		height: 34,
+		borderRadius: 17,
+		overflow: "hidden",
+		justifyContent: "center",
+		alignItems: "center",
 	},
 	listContent: {
 		paddingHorizontal: 20,

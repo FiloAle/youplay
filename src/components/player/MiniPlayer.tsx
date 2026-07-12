@@ -1,6 +1,7 @@
 import { ThemedText } from "@/components/themed-text";
 import { Colors, PLAYER_SHEET_FRACTION } from "@/constants/theme";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useEvent } from "expo";
 import { BottomSheet, Button, Group, Host } from "@expo/ui/swift-ui";
 import {
 	buttonStyle,
@@ -16,15 +17,18 @@ import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
 import FullScreenPlayer from "./FullScreenPlayer";
 
 export default function MiniPlayer() {
-	const { currentVideo, status, pause, resume, playNext } = usePlayer();
+	const { currentVideo, pause, resume, playNext, player } = usePlayer();
 	const [isFullScreen, setIsFullScreen] = useState(false);
+	
+	const isPlayingEvent = useEvent(player, "playingChange", { isPlaying: player?.playing ?? false });
+	
 	const colorScheme = useColorScheme();
 	const colors =
 		Colors[colorScheme === "unspecified" ? "light" : (colorScheme ?? "light")];
 
 	if (!currentVideo) return null;
 
-	const isPlaying = status?.playing ?? false;
+	const isPlaying = isPlayingEvent.isPlaying;
 
 	const handlePlayPause = () => {
 		if (isPlaying) {

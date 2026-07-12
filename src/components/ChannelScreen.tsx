@@ -3,7 +3,7 @@ import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { ChannelInfo, VideoInfo, youtubeService } from "@/lib/youtube";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	ActivityIndicator,
 	FlatList,
@@ -15,35 +15,68 @@ import {
 
 export default function ChannelScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>();
-	const { isSubscribed, toggleSubscription } = useSubscriptions();
-	const [channel, setChannel] = useState<ChannelInfo | null>(null);
+	const { subscriptions, isSubscribed, toggleSubscription } = useSubscriptions();
+	const existingSub = subscriptions.find(s => s.id === id);
+	const [channel, setChannel] = useState<ChannelInfo | null>(existingSub || null);
 	const [videos, setVideos] = useState<VideoInfo[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
+	const [isLoadingChannel, setIsLoadingChannel] = useState(!existingSub);
+	const [isLoadingMore, setIsLoadingMore] = useState(false);
 	const [error, setError] = useState("");
+	// Ref to abort the generator if the component unmounts or id changes
+	const abortRef = useRef(false);
 
 	const isSubbed = channel ? isSubscribed(channel.id) : false;
 
 	useEffect(() => {
 		if (!id) return;
 
-		const loadData = async () => {
-			setIsLoading(true);
-			setError("");
+		abortRef.current = false;
+		if (!existingSub) {
+			setIsLoadingChannel(true);
+			setChannel(null);
+		}
+		setIsLoadingMore(false);
+		setError("");
+		setVideos([]);
+
+		const run = async () => {
 			try {
-				const [chInfo, chVideos] = await Promise.all([
-					youtubeService.getChannelInfo(id),
-					youtubeService.getChannelVideos(id),
-				]);
-				setChannel(chInfo);
-				setVideos(chVideos);
+				// Start fetching channel info concurrently
+				youtubeService.getChannelInfo(id).then(chInfo => {
+					if (!abortRef.current) {
+						setChannel(chInfo);
+						setIsLoadingChannel(false);
+					}
+				}).catch(err => {
+					if (!abortRef.current) {
+						setError(err.message || "Errore nel caricamento del canale");
+						setIsLoadingChannel(false);
+					}
+				});
+
+				// Stream videos concurrently (RSS yields instantly, InnerTube yields later)
+				setIsLoadingMore(true);
+				for await (const page of youtubeService.streamChannelVideos(id)) {
+					if (abortRef.current) return;
+					setVideos(page);
+					// As soon as we get the first batch (e.g. RSS), hide the main loading state
+					if (isLoadingChannel) setIsLoadingChannel(false);
+				}
 			} catch (err: any) {
-				setError(err.message || "Errore nel caricamento del canale");
+				if (!abortRef.current) {
+					setError(err.message || "Errore nel caricamento del canale");
+					setIsLoadingChannel(false);
+				}
 			} finally {
-				setIsLoading(false);
+				if (!abortRef.current) setIsLoadingMore(false);
 			}
 		};
 
-		loadData();
+		run();
+
+		return () => {
+			abortRef.current = true;
+		};
 	}, [id]);
 
 	const renderHeader = useCallback(() => {
@@ -99,7 +132,7 @@ export default function ChannelScreen() {
 		[],
 	);
 
-	if (isLoading) {
+	if (isLoadingChannel) {
 		return (
 			<View style={styles.centerContainer}>
 				<Stack.Screen options={{ title: "Caricamento..." }} />
@@ -127,6 +160,13 @@ export default function ChannelScreen() {
 				ListHeaderComponent={renderHeader}
 				contentContainerStyle={styles.listContent}
 				indicatorStyle="white"
+				ListFooterComponent={
+					isLoadingMore ? (
+						<View style={styles.footerLoader}>
+							<ActivityIndicator size="small" color="#555" />
+						</View>
+					) : null
+				}
 			/>
 		</View>
 	);
@@ -225,5 +265,9 @@ const styles = StyleSheet.create({
 		color: "#ff453a",
 		fontSize: 16,
 		textAlign: "center",
+	},
+	footerLoader: {
+		paddingVertical: 24,
+		alignItems: "center",
 	},
 });

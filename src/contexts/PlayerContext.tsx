@@ -1,9 +1,6 @@
 import { VideoInfo, youtubeService } from "@/lib/youtube";
-import {
-	setAudioModeAsync,
-	useAudioPlayer,
-	useAudioPlayerStatus,
-} from "expo-audio";
+import { setAudioModeAsync } from "expo-audio";
+import { useVideoPlayer } from "expo-video";
 import React, {
 	createContext,
 	ReactNode,
@@ -11,7 +8,7 @@ import React, {
 	useEffect,
 	useState,
 } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, View } from "react-native";
 
 interface PlayerContextType {
 	currentVideo: VideoInfo | null;
@@ -19,7 +16,6 @@ interface PlayerContextType {
 	pause: () => void;
 	resume: () => void;
 	seekTo: (time: number) => void;
-	status: any;
 	isLoading: boolean;
 	player: any;
 	queue: VideoInfo[];
@@ -34,10 +30,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [queue, setQueue] = useState<VideoInfo[]>([]);
-	const [pendingPlay, setPendingPlay] = useState(false);
 
-	const player = useAudioPlayer();
-	const status = useAudioPlayerStatus(player);
+	const player = useVideoPlayer(null);
 
 	useEffect(() => {
 		setAudioModeAsync({
@@ -46,102 +40,53 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 			interruptionMode: "doNotMix",
 		});
 	}, []);
-	const [toastMessage, setToastMessage] = useState<string | null>(null);
-	const [activeFallbackUrl, setActiveFallbackUrl] = useState<string | null>(
-		null,
-	);
-	const fallbackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
-		null,
-	);
+
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
 
-	const statusRef = React.useRef(status);
-	useEffect(() => {
-		statusRef.current = status;
-	}, [status]);
-
-	const showToast = (message: string) => {
-		setToastMessage(message);
-		setTimeout(() => {
-			setToastMessage(null);
-		}, 2500);
-	};
-
 	const playNext = async () => {
-		// Evita chiamate multiple (il player potrebbe mandare decine di update di fine video in un secondo)
 		if (playNextLock.current) return;
 		playNextLock.current = true;
 
-		// Sblocca automaticamente dopo 5 secondi (tempo più che sufficiente per caricare il nuovo video)
 		setTimeout(() => {
 			playNextLock.current = false;
 		}, 5000);
 
 		if (queueRef.current.length > 0) {
 			const nextVideo = queueRef.current[0];
-
-			// Update both state and ref
 			queueRef.current = queueRef.current.slice(1);
 			setQueue(queueRef.current);
-
-			showToast("Riproduco da coda: " + nextVideo.title);
 			await playVideo(nextVideo);
 		} else {
 			player.pause();
-			player.seekTo(0);
+			player.currentTime = 0;
 		}
 	};
 
-	// Execute fallback if the timer completes and sets activeFallbackUrl
 	useEffect(() => {
-		if (activeFallbackUrl) {
-			console.log("Fallback triggered");
-			showToast("Avvio lento, provo stream alternativo...");
-			player.replace(activeFallbackUrl);
-			player.play();
-			setActiveFallbackUrl(null); // Reset
-		}
-	}, [activeFallbackUrl, player]);
-
-	// Handle general player status updates
-	useEffect(() => {
-		if (status) {
-			if (status.error) {
+		const sub1 = player.addListener("statusChange", (payload) => {
+			if (payload.status === "error") {
 				Alert.alert(
 					"Errore Riproduzione",
-					"Il player nativo ha rifiutato lo stream audio.",
+					"Il player nativo ha rifiutato lo stream video.",
 				);
 				setCurrentVideo(null);
-			} else {
-				const actualDuration =
-					currentVideo?.durationSeconds && currentVideo.durationSeconds > 0
-						? currentVideo.durationSeconds
-						: (status.duration ?? 0);
-
-				if (status.didJustFinish) {
-					playNext();
-				} else if (
-					status.currentTime > 0 &&
-					actualDuration > 0 &&
-					status.currentTime >= actualDuration - 0.1
-				) {
-					playNext();
-				}
 			}
-		}
-	}, [
-		status?.currentTime,
-		status?.duration,
-		status?.didJustFinish,
-		status?.error,
-		currentVideo,
-	]);
+		});
+
+		const sub2 = player.addListener("playToEnd", () => {
+			playNext();
+		});
+
+		return () => {
+			sub1.remove();
+			sub2.remove();
+		};
+	}, [player]);
 
 	const addToQueue = (video: VideoInfo) => {
 		queueRef.current = [...queueRef.current, video];
 		setQueue(queueRef.current);
-		showToast(`"${video.title}" aggiunto alla coda`);
 	};
 
 	const removeFromQueue = (index: number) => {
@@ -154,45 +99,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const playVideo = async (video: VideoInfo) => {
 		setIsLoading(true);
 		setCurrentVideo(video);
-		setActiveFallbackUrl(null); // Reset fallback state
-		if (fallbackTimerRef.current) {
-			clearTimeout(fallbackTimerRef.current);
-			fallbackTimerRef.current = null;
-		}
 
 		try {
 			const streamInfo = await youtubeService.getAudioStream(video.videoId);
 			if (streamInfo && streamInfo.url) {
-				player.replace(streamInfo.url);
+				await player.replaceAsync(streamInfo.url);
 				player.play();
-				player.setActiveForLockScreen(
-					true,
-					{
-						title: video.title,
-						artist: video.channelName || "YouTube Podcast",
-						artworkUrl: video.thumbnailUrl,
-						durationSeconds: video.durationSeconds,
-					} as any,
-					{
-						isLiveStream: false,
-						showSeekForward: true,
-						showSeekBackward: true,
-					},
-				);
-
-				// Set fallback timer to 3.5 seconds
-				if (streamInfo.fallbackUrl) {
-					const fallback = streamInfo.fallbackUrl;
-					fallbackTimerRef.current = setTimeout(() => {
-						const currentStatus = statusRef.current;
-						// Se dopo 3.5 secondi siamo ancora a meno di 0.5s di riproduzione, vuol dire che il player è impallato sul buffering iniziale
-						if (!currentStatus || currentStatus.currentTime < 0.5) {
-							setActiveFallbackUrl(fallback);
-						}
-					}, 3500);
-				}
+				// expo-video supporta i metadata per il control center
+				player.showNowPlayingNotification = true;
+				// In SDK 56 potremmo dover usare moduli specifici per i metadati,
+				// ma per ora avviamo lo stream
 			} else {
-				Alert.alert("Errore", "Nessun flusso audio trovato.");
+				Alert.alert("Errore", "Nessun flusso compatibile trovato.");
 				setCurrentVideo(null);
 			}
 		} catch (e: any) {
@@ -212,7 +130,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	};
 
 	const seekTo = (time: number) => {
-		player.seekTo(time);
+		player.currentTime = time;
 	};
 
 	return (
@@ -223,7 +141,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				pause,
 				resume,
 				seekTo,
-				status,
 				isLoading,
 				player,
 				queue,
@@ -233,32 +150,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 			}}
 		>
 			{children}
-			{toastMessage && (
-				<View
-					style={{
-						position: "absolute",
-						bottom: 164,
-						left: 20,
-						right: 20,
-						backgroundColor: "#333",
-						padding: 16,
-						borderRadius: 12,
-						shadowColor: "#000",
-						shadowOpacity: 0.3,
-						shadowRadius: 10,
-						elevation: 5,
-						alignItems: "center",
-						justifyContent: "center",
-					}}
-				>
-					<Text
-						style={{ color: "white", fontWeight: "bold", textAlign: "center" }}
-						numberOfLines={2}
-					>
-						{toastMessage}
-					</Text>
-				</View>
-			)}
 		</PlayerContext.Provider>
 	);
 }

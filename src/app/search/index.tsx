@@ -1,3 +1,4 @@
+import EmptyState from "@/components/EmptyState";
 import { ChannelInfo, youtubeService } from "@/lib/youtube";
 import { Host, TextField, useNativeState } from "@expo/ui/swift-ui";
 import { foregroundStyle } from "@expo/ui/swift-ui/modifiers";
@@ -107,22 +108,28 @@ export default function SearchScreen() {
 		}
 		if (error) {
 			return (
-				<View style={styles.centerContainer}>
-					<Text style={styles.errorText}>{error}</Text>
-				</View>
+				<EmptyState
+					icon="exclamationmark.triangle"
+					title="Errore"
+					subtitle={error}
+				/>
 			);
 		}
 		if (debouncedQuery) {
 			return (
-				<View style={styles.centerContainer}>
-					<Text style={styles.emptyText}>Nessun canale trovato</Text>
-				</View>
+				<EmptyState
+					icon="magnifyingglass"
+					title="Nessun canale trovato"
+					subtitle="Prova a cercare qualcos'altro"
+				/>
 			);
 		}
 		return (
-			<View style={styles.centerContainer}>
-				<Text style={styles.emptyText}>Cerca un podcast o un canale</Text>
-			</View>
+			<EmptyState
+				icon="magnifyingglass"
+				title="Effettua una ricerca"
+				subtitle="Inizia a digitare per cercare canali, podcast e molto altro"
+			/>
 		);
 	};
 
@@ -165,19 +172,22 @@ export default function SearchScreen() {
 				</GlassView>
 			</Animated.View>
 
-			<Animated.FlatList
-				data={results}
-				keyExtractor={(item) => item.id}
-				renderItem={renderChannel}
-				contentContainerStyle={[styles.listContent, { paddingTop: 180 }]}
-				indicatorStyle="white"
-				onScroll={Animated.event(
-					[{ nativeEvent: { contentOffset: { y: scrollY } } }],
-					{ useNativeDriver: true },
-				)}
-				scrollEventThrottle={16}
-				ListEmptyComponent={renderEmptyState}
-			/>
+			{results.length === 0 ? (
+				renderEmptyState()
+			) : (
+				<Animated.FlatList
+					data={results}
+					keyExtractor={(item) => item.id}
+					renderItem={renderChannel}
+					contentContainerStyle={[styles.listContent, { paddingTop: 180 }]}
+					indicatorStyle="white"
+					onScroll={Animated.event(
+						[{ nativeEvent: { contentOffset: { y: scrollY } } }],
+						{ useNativeDriver: true },
+					)}
+					scrollEventThrottle={16}
+				/>
+			)}
 		</View>
 	);
 }
@@ -241,6 +251,7 @@ const styles = StyleSheet.create({
 		padding: 40,
 	},
 	listContent: {
+		flexGrow: 1,
 		paddingHorizontal: 16,
 		paddingBottom: 100, // padding for miniplayer
 	},

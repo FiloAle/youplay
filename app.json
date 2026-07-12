@@ -10,10 +10,13 @@
     "ios": {
       "icon": "./assets/ytpod.icon",
       "bundleIdentifier": "com.filippoaleee.youtube-podcasts",
+      "minimumOsVersion": "16.0",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
-        ]
+        ],
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
       }
     },
     "android": {
@@ -48,7 +51,9 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-sharing",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

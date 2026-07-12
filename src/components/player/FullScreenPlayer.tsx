@@ -1,9 +1,12 @@
 import { ThemedText } from "@/components/themed-text";
+import { SymbolView } from "expo-symbols";
 import { Colors, PLAYER_SHEET_FRACTION } from "@/constants/theme";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useEvent } from "expo";
+import { VideoView } from "expo-video";
 import { Button, Host } from "@expo/ui/swift-ui";
 import { buttonStyle, font, tint } from "@expo/ui/swift-ui/modifiers";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
 	Dimensions,
 	Image,
@@ -18,6 +21,7 @@ import {
 	State,
 } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassView } from "expo-glass-effect";
 
 interface Props {
 	onClose: () => void;
@@ -33,7 +37,6 @@ function formatTime(seconds: number) {
 export default function FullScreenPlayer({ onClose }: Props) {
 	const {
 		currentVideo,
-		status,
 		pause,
 		resume,
 		seekTo,
@@ -43,14 +46,43 @@ export default function FullScreenPlayer({ onClose }: Props) {
 		player,
 	} = usePlayer();
 	const [showQueue, setShowQueue] = useState(false);
-	const [speed, setSpeed] = useState(1);
+	const [isVideoMode, setIsVideoMode] = useState(false);
 
-	// Sync local speed state with native player speed (useful across track changes)
+	const videoRef = useRef<VideoView>(null);
+
+	const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+
+	const isPlayingEvent = useEvent(player, "playingChange", {
+		isPlaying: player.playing,
+	});
+	const playbackRateEvent = useEvent(player, "playbackRateChange", {
+		playbackRate: player.playbackRate,
+	});
+	const [currentTime, setCurrentTime] = useState(0);
+
 	useEffect(() => {
-		if (status?.playbackRate !== undefined && status.playbackRate !== speed) {
-			setSpeed(status.playbackRate);
-		}
-	}, [status?.playbackRate]);
+		// Use manual interval to sync time since useEvent for timeUpdate might not trigger fast enough or needs explicit config
+		const interval = setInterval(() => {
+			if (player && player.playing) {
+				setCurrentTime(player.currentTime);
+			}
+		}, 500);
+		return () => clearInterval(interval);
+	}, [player]);
+
+	const currentSpeed =
+		playbackRateEvent?.playbackRate ?? player.playbackRate ?? 1;
+
+	const handleSpeedChange = () => {
+		let nextSpeed = 1;
+		if (currentSpeed < 1.25) nextSpeed = 1.25;
+		else if (currentSpeed < 1.5) nextSpeed = 1.5;
+		else if (currentSpeed < 2) nextSpeed = 2;
+		else if (currentSpeed < 2.5) nextSpeed = 2.5;
+		else nextSpeed = 1;
+
+		player.playbackRate = nextSpeed;
+	};
 
 	const colorScheme = useColorScheme();
 	const colors =
@@ -59,12 +91,11 @@ export default function FullScreenPlayer({ onClose }: Props) {
 
 	if (!currentVideo) return null;
 
-	const isPlaying = status?.playing ?? false;
-	const currentTime = status?.currentTime ?? 0;
+	const isPlaying = isPlayingEvent.isPlaying;
 	const duration =
 		currentVideo.durationSeconds > 0
 			? currentVideo.durationSeconds
-			: (status?.duration ?? 0);
+			: (player.duration ?? 0);
 
 	const handlePlayPause = () => {
 		if (isPlaying) pause();
@@ -77,13 +108,6 @@ export default function FullScreenPlayer({ onClose }: Props) {
 
 	const skipForward = () => {
 		seekTo(Math.min(duration, currentTime + 15));
-	};
-
-	const handleSpeedChange = () => {
-		const nextSpeed =
-			speed === 1 ? 1.5 : speed === 1.5 ? 2 : speed === 2 ? 2.5 : 1;
-		setSpeed(nextSpeed);
-		player.setPlaybackRate(nextSpeed, nextSpeed > 2 ? "high" : "medium");
 	};
 
 	const [barWidth, setBarWidth] = useState(0);
@@ -203,10 +227,84 @@ export default function FullScreenPlayer({ onClose }: Props) {
 				) : (
 					<View style={{ width: "100%" }}>
 						<View style={styles.artContainer}>
-							<Image
-								source={{ uri: currentVideo.thumbnailUrl }}
-								style={styles.albumArt}
-							/>
+							{isVideoMode ? (
+								<VideoView
+									ref={videoRef}
+									player={player}
+									style={styles.albumArt}
+									nativeControls={isNativeFullscreen}
+									contentFit="cover"
+									fullscreenOptions={{ enable: true, orientation: "landscape" }}
+									onFullscreenEnter={() => setIsNativeFullscreen(true)}
+									onFullscreenExit={() => setIsNativeFullscreen(false)}
+								/>
+							) : (
+								<Image
+									source={{ uri: currentVideo.thumbnailUrl }}
+									style={styles.albumArt}
+								/>
+							)}
+
+							{/* Overlays on cover */}
+							<View style={styles.overlayContainer}>
+								{/* Left Chip */}
+								<GlassView
+									glassEffectStyle="regular"
+									style={styles.overlayChip}
+								>
+									<Pressable
+										onPress={() => setIsVideoMode(!isVideoMode)}
+										style={{
+											flexDirection: "row",
+											alignItems: "center",
+											paddingHorizontal: 10,
+											height: 28,
+											gap: 8,
+										}}
+									>
+										<SymbolView
+											name={isVideoMode ? "headphones" : "play.tv.fill"}
+											size={14}
+											weight="medium"
+											tintColor="#FFFFFF"
+										/>
+										<ThemedText
+											style={{
+												fontSize: 14,
+												fontWeight: "500",
+												color: "#FFFFFF",
+											}}
+										>
+											{isVideoMode ? "Passa al podcast" : "Passa al video"}
+										</ThemedText>
+									</Pressable>
+								</GlassView>
+
+								{/* Right Fullscreen Button */}
+								{isVideoMode && (
+									<GlassView
+										glassEffectStyle="regular"
+										style={styles.overlayCircle}
+									>
+										<Pressable
+											onPress={() => videoRef.current?.enterFullscreen()}
+											style={{
+												width: 28,
+												height: 28,
+												justifyContent: "center",
+												alignItems: "center",
+											}}
+										>
+											<SymbolView
+												name="arrow.up.left.and.arrow.down.right"
+												size={14}
+												weight="medium"
+												tintColor="#FFFFFF"
+											/>
+										</Pressable>
+									</GlassView>
+								)}
+							</View>
 						</View>
 
 						<View style={styles.infoContainer}>
@@ -306,7 +404,7 @@ export default function FullScreenPlayer({ onClose }: Props) {
 					}}
 				>
 					<Button
-						label={`${speed}x`}
+						label={`${currentSpeed}x`}
 						onPress={handleSpeedChange}
 						modifiers={[
 							font({ size: 17, weight: "bold" }),
@@ -419,6 +517,28 @@ const styles = StyleSheet.create({
 		shadowRadius: 20,
 		elevation: 10,
 		backgroundColor: "#333",
+		position: "relative",
+	},
+	overlayContainer: {
+		position: "absolute",
+		bottom: 8,
+		left: 8,
+		right: 8,
+		flexDirection: "row",
+		justifyContent: "space-between",
+		alignItems: "center",
+	},
+	overlayChip: {
+		borderRadius: 20,
+		overflow: "hidden",
+	},
+	overlayCircle: {
+		borderRadius: 14,
+		overflow: "hidden",
+		width: 28,
+		height: 28,
+		justifyContent: "center",
+		alignItems: "center",
 	},
 	albumArt: {
 		width: "100%",
