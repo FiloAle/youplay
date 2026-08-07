@@ -2,8 +2,23 @@ import EmptyState from "@/components/EmptyState";
 import EpisodeCard from "@/components/EpisodeCard";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { VideoInfo, sortVideosByDate, youtubeService } from "@/lib/youtube";
-import { Button, Host, Menu, Group, List, SwipeActions, BottomSheet, Section, Text as SwiftUI_Text } from "@expo/ui/swift-ui";
-import { listStyle, listRowSeparator, listRowBackground, listRowInsets, scrollContentBackground, padding, font, foregroundStyle, labelStyle, tint, frame, glassEffect } from "@expo/ui/swift-ui/modifiers";
+import {
+	Button,
+	Host,
+	Menu,
+	Group,
+	List,
+	SwipeActions,
+	BottomSheet,
+	Section,
+	Text as SwiftUI_Text,
+} from "@expo/ui/swift-ui";
+import {
+	listStyle,
+	padding,
+	font,
+	foregroundStyle,
+} from "@expo/ui/swift-ui/modifiers";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -29,8 +44,8 @@ export default function HomeScreen() {
 
 	const filteredFeed = useMemo(() => {
 		if (!selectedCategory) return feed;
-		return feed.filter(video => {
-			const channel = subscriptions.find(s => s.id === video.channelId);
+		return feed.filter((video) => {
+			const channel = subscriptions.find((s) => s.id === video.channelId);
 			return channel?.category === selectedCategory;
 		});
 	}, [feed, subscriptions, selectedCategory]);
@@ -65,7 +80,7 @@ export default function HomeScreen() {
 			// Phase 1: Progressive chunked fetch
 			let currentFeed: VideoInfo[] = [];
 			const CHUNK_SIZE = 3;
-			
+
 			for (let i = 0; i < subscriptions.length; i += CHUNK_SIZE) {
 				if (generationRef.current !== currentGeneration) return;
 
@@ -157,13 +172,19 @@ export default function HomeScreen() {
 									glassEffectStyle="regular"
 									pointerEvents="none"
 								>
-									<SymbolView name="line.3.horizontal.decrease" size={18} tintColor="#fff" />
+									<SymbolView
+										name="line.3.horizontal.decrease"
+										size={18}
+										tintColor="#fff"
+									/>
 								</GlassView>
 							}
 						>
 							<Button
 								label="Tutte"
-								systemImage={selectedCategory === null ? "checkmark" : undefined}
+								systemImage={
+									selectedCategory === null ? "checkmark" : undefined
+								}
 								onPress={() => setSelectedCategory(null)}
 							/>
 							<Group>
@@ -171,7 +192,9 @@ export default function HomeScreen() {
 									<Button
 										key={c}
 										label={c}
-										systemImage={selectedCategory === c ? "checkmark" : undefined}
+										systemImage={
+											selectedCategory === c ? "checkmark" : undefined
+										}
 										onPress={() => setSelectedCategory(c)}
 									/>
 								))}
@@ -194,9 +217,14 @@ export default function HomeScreen() {
 					fitToContents
 				>
 					<List modifiers={[listStyle("insetGrouped")]}>
-						<Section 
+						<Section
 							header={
-								<SwiftUI_Text modifiers={[padding({ top: 12, bottom: 4 }), font({ size: 18, weight: "semibold" })]}>
+								<SwiftUI_Text
+									modifiers={[
+										padding({ top: 12, bottom: 4 }),
+										font({ size: 18, weight: "semibold" }),
+									]}
+								>
 									Categorie
 								</SwiftUI_Text>
 							}
@@ -204,7 +232,12 @@ export default function HomeScreen() {
 							<List.ForEach>
 								{categories.map((c) => (
 									<SwipeActions key={c}>
-										<SwiftUI_Text modifiers={[foregroundStyle("white"), padding({ top: 12, bottom: 12, leading: 4 })]}>
+										<SwiftUI_Text
+											modifiers={[
+												foregroundStyle("white"),
+												padding({ top: 12, bottom: 12, leading: 4 }),
+											]}
+										>
 											{c}
 										</SwiftUI_Text>
 										<SwipeActions.Actions edge="trailing" allowsFullSwipe>
@@ -217,7 +250,11 @@ export default function HomeScreen() {
 													}
 												}}
 											>
-												<SwiftUI_Image systemName="trash" color="white" size={20} />
+												<SwiftUI_Image
+													systemName="trash"
+													color="white"
+													size={20}
+												/>
 											</Button>
 										</SwipeActions.Actions>
 									</SwipeActions>

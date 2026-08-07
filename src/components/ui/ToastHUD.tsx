@@ -1,14 +1,25 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
 	useAnimatedStyle,
 	useSharedValue,
-	withSpring,
 	withTiming,
 	runOnJS,
 } from "react-native-reanimated";
-import { Host, HStack, Image as SwiftUIImage, Text as SwiftUIText } from "@expo/ui/swift-ui";
-import { glassEffect, cornerRadius, font, tint, padding, frame } from "@expo/ui/swift-ui/modifiers";
+import {
+	Host,
+	HStack,
+	Image as SwiftUIImage,
+	Text as SwiftUIText,
+} from "@expo/ui/swift-ui";
+import {
+	glassEffect,
+	cornerRadius,
+	font,
+	tint,
+	padding,
+	frame,
+} from "@expo/ui/swift-ui/modifiers";
 
 interface ToastHUDProps {
 	visible: boolean;
@@ -48,10 +59,7 @@ export default function ToastHUD({ visible, message, onHide }: ToastHUDProps) {
 
 	// Non rendiamo nulla se l'opacità è 0 per motivi di performance (handled by pointerEvents="none" in parent)
 	return (
-		<View
-			style={styles.overlay}
-			pointerEvents="none"
-		>
+		<View style={styles.overlay} pointerEvents="none">
 			<Animated.View style={animatedStyle}>
 				<Host style={styles.hudContainer}>
 					<HStack
@@ -66,16 +74,10 @@ export default function ToastHUD({ visible, message, onHide }: ToastHUDProps) {
 					>
 						<SwiftUIImage
 							systemName="checkmark.circle.fill"
-							modifiers={[
-								font({ size: 16, weight: "medium" }),
-								tint("#FFF"),
-							]}
+							modifiers={[font({ size: 16, weight: "medium" }), tint("#FFF")]}
 						/>
 						<SwiftUIText
-							modifiers={[
-								font({ size: 15, weight: "semibold" }),
-								tint("#FFF"),
-							]}
+							modifiers={[font({ size: 15, weight: "semibold" }), tint("#FFF")]}
 						>
 							{message}
 						</SwiftUIText>

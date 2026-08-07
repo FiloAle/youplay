@@ -10,7 +10,7 @@ import React, {
 	useEffect,
 	useState,
 } from "react";
-import { Alert, View } from "react-native";
+import { Alert } from "react-native";
 import ToastHUD from "@/components/ui/ToastHUD";
 
 interface PlayerContextType {
@@ -59,12 +59,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
+	const autoplayPendingRef = React.useRef(false);
 
 	const playbackRateEvent = useEvent(player, "playbackRateChange");
 
 	useEffect(() => {
 		if (playbackRateEvent?.playbackRate) {
-			AsyncStorage.setItem("player_playback_rate", playbackRateEvent.playbackRate.toString());
+			AsyncStorage.setItem(
+				"player_playback_rate",
+				playbackRateEvent.playbackRate.toString(),
+			);
 		}
 	}, [playbackRateEvent?.playbackRate]);
 
@@ -72,18 +76,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		if (playNextLock.current) return;
 		playNextLock.current = true;
 
-		setTimeout(() => {
+		try {
+			if (queueRef.current.length > 0) {
+				const nextVideo = queueRef.current[0];
+				queueRef.current = queueRef.current.slice(1);
+				setQueue(queueRef.current);
+				await playVideo(nextVideo);
+			} else {
+				player.pause();
+				player.currentTime = 0;
+			}
+		} finally {
 			playNextLock.current = false;
-		}, 5000);
-
-		if (queueRef.current.length > 0) {
-			const nextVideo = queueRef.current[0];
-			queueRef.current = queueRef.current.slice(1);
-			setQueue(queueRef.current);
-			await playVideo(nextVideo);
-		} else {
-			player.pause();
-			player.currentTime = 0;
 		}
 	};
 
@@ -95,6 +99,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 					"Il player nativo ha rifiutato lo stream video.",
 				);
 				setCurrentVideo(null);
+			} else if (payload.status === "readyToPlay") {
+				if (autoplayPendingRef.current) {
+					autoplayPendingRef.current = false;
+					player.play();
+				}
 			}
 		});
 
@@ -137,17 +146,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		try {
 			// Yield the JS thread to allow the MiniPlayer to mount and animations to start
 			// This prevents the heavy youtubei.js parsing from freezing the UI (e.g. blocking the BottomSheet from opening)
-			await new Promise(resolve => setTimeout(resolve, 50));
+			await new Promise((resolve) => setTimeout(resolve, 50));
 
 			const streamPromise = youtubeService.getAudioStream(video.videoId);
-			
+
 			const hq720 = `https://i.ytimg.com/vi/${video.videoId}/hq720.jpg`;
 			const fallbackArtwork = `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`;
 			const artworkPromise = fetch(hq720, { method: "HEAD" })
-				.then(res => res.ok ? hq720 : fallbackArtwork)
+				.then((res) => (res.ok ? hq720 : fallbackArtwork))
 				.catch(() => fallbackArtwork);
 
-			const [streamInfo, bestArtwork] = await Promise.all([streamPromise, artworkPromise]);
+			const [streamInfo, bestArtwork] = await Promise.all([
+				streamPromise,
+				artworkPromise,
+			]);
+
+			autoplayPendingRef.current = autoplay;
 
 			if (streamInfo && streamInfo.url) {
 				await player.replaceAsync({
@@ -156,16 +170,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 						title: video.title,
 						artist: video.channelName || "YouTube Podcast",
 						artwork: bestArtwork,
-					}
+					},
 				});
-				
+
 				const savedSpeed = await AsyncStorage.getItem("player_playback_rate");
 				if (savedSpeed) {
 					player.playbackRate = parseFloat(savedSpeed);
 				}
 
 				if (autoplay) {
-					player.play();
+					player.play(); // Fallback if readyToPlay was immediate
 				}
 				player.showNowPlayingNotification = true;
 			} else {
@@ -221,10 +235,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 			}}
 		>
 			{children}
-			<ToastHUD 
-				visible={toastVisible} 
-				message={toastMessage} 
-				onHide={() => setToastVisible(false)} 
+			<ToastHUD
+				visible={toastVisible}
+				message={toastMessage}
+				onHide={() => setToastVisible(false)}
 			/>
 		</PlayerContext.Provider>
 	);

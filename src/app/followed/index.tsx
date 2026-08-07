@@ -2,8 +2,6 @@ import EmptyState from "@/components/EmptyState";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { ChannelInfo } from "@/lib/youtube";
 import { Button, ContextMenu, Host, Menu, Group } from "@expo/ui/swift-ui";
-import { frame, tint, glassEffect, font, labelStyle } from "@expo/ui/swift-ui/modifiers";
-import { Ionicons } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -69,7 +67,9 @@ export default function FollowedScreen() {
 									<Text style={styles.channelName} numberOfLines={1}>
 										{item.name}
 									</Text>
-									<Text style={styles.channelSubscribers}>{item.subscribers}</Text>
+									<Text style={styles.channelSubscribers}>
+										{item.subscribers}
+									</Text>
 								</View>
 							</Pressable>
 						</ContextMenu.Trigger>
@@ -107,48 +107,48 @@ export default function FollowedScreen() {
 							</GlassView>
 						}
 					>
-					<Group>
-						{categories.map((c) => (
-							<Button
-								key={c}
-								label={c}
-								systemImage={item.category === c ? "checkmark" : undefined}
-								onPress={() => {
-									if (item.category === c) {
-										setChannelCategory(item.id, null);
-									} else {
-										setChannelCategory(item.id, c);
-									}
-								}}
-							/>
-						))}
-					</Group>
-					<Button
-						label="Crea categoria..."
-						systemImage="plus"
-						onPress={() => {
-							Alert.prompt(
-								"Crea categoria",
-								undefined,
-								[
-									{ text: "Annulla", style: "cancel" },
-									{
-										text: "Conferma",
-										style: "default",
-										isPreferred: true,
-										onPress: (text?: string) => {
-											if (text) {
-												createAndSetCategory(item.id, text);
-											}
+						<Group>
+							{categories.map((c) => (
+								<Button
+									key={c}
+									label={c}
+									systemImage={item.category === c ? "checkmark" : undefined}
+									onPress={() => {
+										if (item.category === c) {
+											setChannelCategory(item.id, null);
+										} else {
+											setChannelCategory(item.id, c);
+										}
+									}}
+								/>
+							))}
+						</Group>
+						<Button
+							label="Crea categoria..."
+							systemImage="plus"
+							onPress={() => {
+								Alert.prompt(
+									"Crea categoria",
+									undefined,
+									[
+										{ text: "Annulla", style: "cancel" },
+										{
+											text: "Conferma",
+											style: "default",
+											isPreferred: true,
+											onPress: (text?: string) => {
+												if (text) {
+													createAndSetCategory(item.id, text);
+												}
+											},
 										},
-									},
-								],
-								"plain-text"
-							);
-						}}
-					/>
-				</Menu>
-			</Host>
+									],
+									"plain-text",
+								);
+							}}
+						/>
+					</Menu>
+				</Host>
 			</View>
 		</View>
 	);
@@ -168,7 +168,12 @@ export default function FollowedScreen() {
 				<Text style={styles.headerTitle}>Seguiti</Text>
 				<View style={styles.headerActions}>
 					{isImporting ? (
-						<View style={[styles.iconButton, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+						<View
+							style={[
+								styles.iconButton,
+								{ backgroundColor: "rgba(255,255,255,0.2)" },
+							]}
+						>
 							<ActivityIndicator color="white" />
 						</View>
 					) : (
