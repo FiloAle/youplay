@@ -45,3 +45,6 @@ example
 # IDEs
 .vscode/
 .claude/
+
+# Agents
+.agents/

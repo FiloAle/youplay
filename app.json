@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "YouTube Podcasts",
-    "slug": "youtube-podcasts",
+    "name": "YouPlay",
+    "slug": "youplay",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "youtubepodcasts",
+    "scheme": "youplay",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/ytpod.icon",
-      "bundleIdentifier": "com.filippoaleee.youtube-podcasts",
+      "bundleIdentifier": "com.filippoaleee.youplay",
       "minimumOsVersion": "16.0",
       "infoPlist": {
         "UIBackgroundModes": [

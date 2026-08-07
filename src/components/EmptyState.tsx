@@ -1,5 +1,4 @@
 import { SFSymbol, SymbolView } from "expo-symbols";
-import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 interface EmptyStateProps {

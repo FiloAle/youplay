@@ -1,4 +1,4 @@
-# YouTube Podcasts
+# YouPlay
 
 A React Native iOS app (built with Expo) that transforms YouTube into a podcast experience. Listen to your favorite channels in the background with a clean interface, fully integrated system audio player.
 

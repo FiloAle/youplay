@@ -8,6 +8,7 @@ export interface ChannelInfo {
 	thumbnail: string;
 	subscribers: string;
 	description: string;
+	category?: string;
 }
 
 export interface VideoInfo {
@@ -17,6 +18,7 @@ export interface VideoInfo {
 	durationSeconds: number;
 	viewCount: string;
 	publishedDate: string;
+	publishedTimestamp?: number;
 	thumbnailUrl: string;
 	channelName: string;
 	channelId?: string;
@@ -83,6 +85,15 @@ export function parseRelativeDate(text: string): number {
 	)
 		return num * 86400 * 365;
 	return Infinity;
+}
+
+export function sortVideosByDate(videos: VideoInfo[]): VideoInfo[] {
+	const now = Date.now();
+	return [...videos].sort((a, b) => {
+		const timeA = a.publishedTimestamp ?? (now - parseRelativeDate(a.publishedDate) * 1000);
+		const timeB = b.publishedTimestamp ?? (now - parseRelativeDate(b.publishedDate) * 1000);
+		return timeB - timeA;
+	});
 }
 
 export function formatISODateToRelative(isoString: string): string {
@@ -309,17 +320,6 @@ class YouTubeService {
 		};
 	}
 
-	private sortByDate(videos: VideoInfo[]): VideoInfo[] {
-		return [...videos].sort((a, b) => {
-			const dateA = parseRelativeDate(a.publishedDate);
-			const dateB = parseRelativeDate(b.publishedDate);
-			if (dateA === dateB) return 0;
-			if (dateA === Infinity) return 1;
-			if (dateB === Infinity) return -1;
-			return dateA - dateB;
-		});
-	}
-
 	// Streams parsed, sorted VideoInfo[] one page at a time.
 	// Each yielded array contains ALL videos seen so far, sorted by date,
 	// so the UI can simply replace its state on each yield.
@@ -372,7 +372,7 @@ class YouTubeService {
 					if (newlyParsed.length > 0) {
 						const merged = [...accumulated, ...newlyParsed];
 						const uniqueFeed = Array.from(new Map(merged.map(v => [v.videoId, v])).values());
-						accumulated = this.sortByDate(uniqueFeed);
+						accumulated = sortVideosByDate(uniqueFeed);
 						yield accumulated;
 					}
 				}
@@ -389,7 +389,7 @@ class YouTubeService {
 					if (newlyParsed.length > 0) {
 						const merged = [...accumulated, ...newlyParsed];
 						const uniqueFeed = Array.from(new Map(merged.map(v => [v.videoId, v])).values());
-						accumulated = this.sortByDate(uniqueFeed);
+						accumulated = sortVideosByDate(uniqueFeed);
 						yield accumulated;
 					}
 				}
@@ -459,6 +459,7 @@ class YouTubeService {
 							videoId,
 							title,
 							publishedDate: formatISODateToRelative(published),
+							publishedTimestamp: date.getTime(),
 							thumbnailUrl: thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
 							channelId: chId,
 							channelName,
@@ -477,9 +478,55 @@ class YouTubeService {
 		}
 	}
 
+	// Used by Home screen to avoid blocking completely if RSS rate limits are hit.
+	async getHomeFeedForChannel(channelId: string): Promise<VideoInfo[]> {
+		let videos = await this.getRecentChannelVideosRss(channelId);
+		
+		if (videos.length === 0) {
+			try {
+				const yt = await this.freshClient();
+				const channel = await yt.getChannel(channelId);
+				const channelName = channel.metadata?.title ?? "";
+				
+				const parsePage = (rawVideos: any[]): VideoInfo[] =>
+					rawVideos
+						.map((v: any) => this.parseRawVideo(v, channelId, channelName))
+						.filter((v): v is VideoInfo => v !== null);
+
+				let fallbackVideos: VideoInfo[] = [];
+
+				if (channel.has_videos) {
+					try {
+						const videosTab = await channel.getVideos();
+						fallbackVideos = [...fallbackVideos, ...parsePage(videosTab.videos ?? [])];
+					} catch (e) {
+						console.warn("Fallback: Could not fetch videos tab", e);
+					}
+				}
+
+				if (channel.has_live_streams) {
+					try {
+						const liveTab = await channel.getLiveStreams();
+						fallbackVideos = [...fallbackVideos, ...parsePage(liveTab.videos ?? [])];
+					} catch (e) {
+						console.warn("Fallback: Could not fetch live streams tab", e);
+					}
+				}
+				
+				const uniqueFeed = Array.from(new Map(fallbackVideos.map(v => [v.videoId, v])).values());
+				videos = sortVideosByDate(uniqueFeed);
+			} catch (e) {
+				console.error("Fallback to InnerTube failed for channel", channelId, e);
+			}
+		}
+
+		return videos;
+	}
+
 	// Yields the feed progressively enriched with durations
 	async *enrichVideoDetails(videos: VideoInfo[], abortSignal?: () => boolean): AsyncGenerator<VideoInfo[]> {
-		const yt = await this.freshClient();
+		await this.init();
+		const yt = this.yt!;
 		const updatedVideos = [...videos];
 
 		const videosToUpdate = updatedVideos.filter(v => v.duration === "Play" || v.durationSeconds === 0);
@@ -538,7 +585,8 @@ class YouTubeService {
 	}
 
 	async getAudioStream(videoId: string): Promise<AudioStreamInfo | null> {
-		const yt = await this.freshClient();
+		await this.init();
+		const yt = this.yt!;
 
 		let info;
 		// Usiamo ANDROID_VR come prima scelta perché non dà errore 403 con l'AVPlayer di iOS.

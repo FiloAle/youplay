@@ -13,11 +13,11 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { GlassView } from "expo-glass-effect";
 import { useState } from "react";
-import { Pressable, StyleSheet, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, useColorScheme, View, ActivityIndicator } from "react-native";
 import FullScreenPlayer from "./FullScreenPlayer";
 
 export default function MiniPlayer() {
-	const { currentVideo, pause, resume, playNext, player } = usePlayer();
+	const { currentVideo, pause, resume, playNext, player, isLoading } = usePlayer();
 	const [isFullScreen, setIsFullScreen] = useState(false);
 	
 	const isPlayingEvent = useEvent(player, "playingChange", { isPlaying: player?.playing ?? false });
@@ -72,25 +72,31 @@ export default function MiniPlayer() {
 							marginRight: 8,
 						}}
 					>
-						<Host
-							style={{
-								width: 32,
-								height: 32,
-								justifyContent: "center",
-								alignItems: "center",
-							}}
-						>
-							<Button
-								label=""
-								systemImage={isPlaying ? "pause.fill" : "play.fill"}
-								onPress={handlePlayPause}
-								modifiers={[
-									font({ size: 24 }),
-									tint(colors.text),
-									buttonStyle("borderless"),
-								]}
-							/>
-						</Host>
+						{isLoading ? (
+							<View style={{ width: 32, height: 32, justifyContent: "center", alignItems: "center" }}>
+								<ActivityIndicator size="small" color={colors.text} />
+							</View>
+						) : (
+							<Host
+								style={{
+									width: 32,
+									height: 32,
+									justifyContent: "center",
+									alignItems: "center",
+								}}
+							>
+								<Button
+									label=""
+									systemImage={isPlaying ? "pause.fill" : "play.fill"}
+									onPress={handlePlayPause}
+									modifiers={[
+										font({ size: 24 }),
+										tint(colors.text),
+										buttonStyle("borderless"),
+									]}
+								/>
+							</Host>
+						)}
 						<Host
 							style={{
 								width: 32,

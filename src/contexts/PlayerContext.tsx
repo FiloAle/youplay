@@ -1,6 +1,8 @@
 import { VideoInfo, youtubeService } from "@/lib/youtube";
 import { setAudioModeAsync } from "expo-audio";
 import { useVideoPlayer } from "expo-video";
+import { useEvent } from "expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
 	createContext,
 	ReactNode,
@@ -9,21 +11,22 @@ import React, {
 	useState,
 } from "react";
 import { Alert, View } from "react-native";
+import ToastHUD from "@/components/ui/ToastHUD";
 
 interface PlayerContextType {
 	currentVideo: VideoInfo | null;
-	playVideo: (video: VideoInfo) => Promise<void>;
+	playVideo: (video: VideoInfo, autoplay?: boolean) => Promise<void>;
 	pause: () => void;
 	resume: () => void;
 	seekTo: (time: number) => void;
 	isLoading: boolean;
 	player: any;
 	queue: VideoInfo[];
+	history: VideoInfo[];
 	addToQueue: (video: VideoInfo) => void;
 	removeFromQueue: (index: number) => void;
 	playNext: () => Promise<void>;
-	isVideoMode: boolean;
-	toggleVideoMode: () => Promise<void>;
+	playPrevious: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
@@ -32,7 +35,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [queue, setQueue] = useState<VideoInfo[]>([]);
-	const [isVideoMode, setIsVideoMode] = useState(false);
+	const [history, setHistory] = useState<VideoInfo[]>([]);
+	const [toastVisible, setToastVisible] = useState(false);
+	const [toastMessage, setToastMessage] = useState("");
+
+	const showToast = (message: string) => {
+		setToastMessage(message);
+		setToastVisible(true);
+	};
 
 	const player = useVideoPlayer(null);
 
@@ -49,6 +59,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
+
+	const playbackRateEvent = useEvent(player, "playbackRateChange");
+
+	useEffect(() => {
+		if (playbackRateEvent?.playbackRate) {
+			AsyncStorage.setItem("player_playback_rate", playbackRateEvent.playbackRate.toString());
+		}
+	}, [playbackRateEvent?.playbackRate]);
 
 	const playNext = async () => {
 		if (playNextLock.current) return;
@@ -91,8 +109,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	}, [player]);
 
 	const addToQueue = (video: VideoInfo) => {
-		queueRef.current = [...queueRef.current, video];
-		setQueue(queueRef.current);
+		if (!currentVideo) {
+			playVideo(video, false);
+			showToast("Aggiunto alla coda");
+		} else {
+			queueRef.current = [...queueRef.current, video];
+			setQueue(queueRef.current);
+			showToast("Aggiunto alla coda");
+		}
 	};
 
 	const removeFromQueue = (index: number) => {
@@ -102,12 +126,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		setQueue(newQueue);
 	};
 
-	const playVideo = async (video: VideoInfo) => {
+	const playVideo = async (video: VideoInfo, autoplay = true) => {
+		if (currentVideo && currentVideo.videoId !== video.videoId) {
+			setHistory((prev) => [...prev, currentVideo]);
+		}
 		setIsLoading(true);
 		setCurrentVideo(video);
 		player.pause();
 
 		try {
+			// Yield the JS thread to allow the MiniPlayer to mount and animations to start
+			// This prevents the heavy youtubei.js parsing from freezing the UI (e.g. blocking the BottomSheet from opening)
+			await new Promise(resolve => setTimeout(resolve, 50));
+
 			const streamPromise = youtubeService.getAudioStream(video.videoId);
 			
 			const hq720 = `https://i.ytimg.com/vi/${video.videoId}/hq720.jpg`;
@@ -127,7 +158,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 						artwork: bestArtwork,
 					}
 				});
-				player.play();
+				
+				const savedSpeed = await AsyncStorage.getItem("player_playback_rate");
+				if (savedSpeed) {
+					player.playbackRate = parseFloat(savedSpeed);
+				}
+
+				if (autoplay) {
+					player.play();
+				}
 				player.showNowPlayingNotification = true;
 			} else {
 				Alert.alert("Errore", "Nessun flusso compatibile trovato.");
@@ -153,9 +192,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		player.currentTime = time;
 	};
 
-	const toggleVideoMode = async () => {
-		if (!currentVideo) return;
-		setIsVideoMode(!isVideoMode);
+	const playPrevious = async () => {
+		if (player.currentTime > 3 || history.length === 0) {
+			player.currentTime = 0;
+			return;
+		}
+		const prev = history[history.length - 1];
+		setHistory((prevHistory) => prevHistory.slice(0, -1));
+		await playVideo(prev);
 	};
 
 	return (
@@ -169,14 +213,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				isLoading,
 				player,
 				queue,
+				history,
 				addToQueue,
 				removeFromQueue,
 				playNext,
-				isVideoMode,
-				toggleVideoMode,
+				playPrevious,
 			}}
 		>
 			{children}
+			<ToastHUD 
+				visible={toastVisible} 
+				message={toastMessage} 
+				onHide={() => setToastVisible(false)} 
+			/>
 		</PlayerContext.Provider>
 	);
 }
