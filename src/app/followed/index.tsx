@@ -1,7 +1,8 @@
 import EmptyState from "@/components/EmptyState";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { ChannelInfo } from "@/lib/youtube";
-import { Button, ContextMenu, Host, Menu, Group } from "@expo/ui/swift-ui";
+import { Button, ContextMenu, Host, Menu, Group, HStack, Image as SwiftUIImage } from "@expo/ui/swift-ui";
+import { frame, glassEffect, tint, font } from "@expo/ui/swift-ui/modifiers";
 import { GlassView } from "expo-glass-effect";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,7 +29,6 @@ export default function FollowedScreen() {
 		importSubscriptions,
 		isImporting,
 		toggleSubscription,
-		addCategory,
 		setChannelCategory,
 		createAndSetCategory,
 	} = useSubscriptions();
@@ -98,13 +98,20 @@ export default function FollowedScreen() {
 				<Host style={{ width: 34, height: 34 }}>
 					<Menu
 						label={
-							<GlassView
-								style={styles.iconButton}
-								glassEffectStyle="regular"
-								pointerEvents="none"
+							<HStack
+								modifiers={[
+									frame({ width: 34, height: 34 }),
+									glassEffect({
+										glass: { variant: "regular" },
+										shape: "circle",
+									}),
+								]}
 							>
-								<SymbolView name="circle.grid.2x2" size={18} tintColor="#fff" />
-							</GlassView>
+								<SwiftUIImage
+									systemName="circle.grid.2x2"
+									modifiers={[font({ size: 16 }), tint("white")]}
+								/>
+							</HStack>
 						}
 					>
 						<Group>
@@ -185,7 +192,11 @@ export default function FollowedScreen() {
 										glassEffectStyle="regular"
 										pointerEvents="none"
 									>
-										<SymbolView name="ellipsis" size={20} tintColor="#fff" />
+										<SymbolView
+											name="ellipsis"
+											size={18}
+											tintColor="#fff"
+										/>
 									</GlassView>
 								}
 							>

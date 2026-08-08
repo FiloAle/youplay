@@ -2,7 +2,7 @@ import EpisodeCard from "@/components/EpisodeCard";
 import { useSubscriptions } from "@/contexts/SubscriptionContext";
 import { ChannelInfo, VideoInfo, youtubeService } from "@/lib/youtube";
 import { Image } from "expo-image";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	ActivityIndicator,
@@ -20,17 +20,34 @@ export default function ChannelScreen() {
 	const [channel, setChannel] = useState<ChannelInfo | null>(existingSub || null);
 	const [videos, setVideos] = useState<VideoInfo[]>([]);
 	const [isLoadingChannel, setIsLoadingChannel] = useState(!existingSub);
-	const [isLoadingMore, setIsLoadingMore] = useState(false);
 	const [error, setError] = useState("");
-	// Ref to abort the generator if the component unmounts or id changes
-	const abortRef = useRef(false);
+	// Ref to store the generator so we can manually pull pages on scroll
+	const generatorRef = useRef<AsyncGenerator<VideoInfo[]> | null>(null);
+	const [isLoadingMore, setIsLoadingMore] = useState(false);
 
 	const isSubbed = channel ? isSubscribed(channel.id) : false;
 
+	const loadMore = useCallback(async () => {
+		if (!generatorRef.current || isLoadingMore) return;
+		setIsLoadingMore(true);
+		try {
+			const { value, done } = await generatorRef.current.next();
+			if (value) setVideos(value);
+			if (done) generatorRef.current = null;
+		} catch (e) {
+			console.warn("Failed to load more videos", e);
+		} finally {
+			setIsLoadingMore(false);
+		}
+	}, [isLoadingMore]);
+
+	const navigation = useNavigation();
+
 	useEffect(() => {
 		if (!id) return;
-
-		abortRef.current = false;
+		
+		let isAborted = false;
+		
 		if (!existingSub) {
 			setIsLoadingChannel(true);
 			setChannel(null);
@@ -41,43 +58,59 @@ export default function ChannelScreen() {
 
 		const run = async () => {
 			try {
-				// Start fetching channel info concurrently
-				youtubeService.getChannelInfo(id).then(chInfo => {
-					if (!abortRef.current) {
-						setChannel(chInfo);
-						setIsLoadingChannel(false);
-					}
-				}).catch(err => {
-					if (!abortRef.current) {
-						setError(err.message || "Errore nel caricamento del canale");
-						setIsLoadingChannel(false);
-					}
-				});
+				if (!existingSub) {
+					youtubeService.getChannelInfo(id).then(chInfo => {
+						if (!isAborted) {
+							setChannel(chInfo);
+							setIsLoadingChannel(false);
+						}
+					}).catch(err => {
+						if (!isAborted) {
+							setError(err.message || "Errore nel caricamento del canale");
+							setIsLoadingChannel(false);
+						}
+					});
+				}
 
-				// Stream videos concurrently (RSS yields instantly, InnerTube yields later)
-				setIsLoadingMore(true);
-				for await (const page of youtubeService.streamChannelVideos(id)) {
-					if (abortRef.current) return;
-					setVideos(page);
-					// As soon as we get the first batch (e.g. RSS), hide the main loading state
+				// Only load the FIRST page (RSS) automatically.
+				// This prevents InnerTube parsing from blocking the JS thread unless the user scrolls.
+				generatorRef.current = youtubeService.streamChannelVideos(id, () => isAborted);
+				const { value, done } = await generatorRef.current.next();
+				if (!isAborted && value) {
+					setVideos(value);
 					if (isLoadingChannel) setIsLoadingChannel(false);
 				}
+				if (done) generatorRef.current = null;
 			} catch (err: any) {
-				if (!abortRef.current) {
+				if (!isAborted) {
 					setError(err.message || "Errore nel caricamento del canale");
 					setIsLoadingChannel(false);
 				}
 			} finally {
-				if (!abortRef.current) setIsLoadingMore(false);
+				if (!isAborted) setIsLoadingMore(false);
 			}
 		};
 
-		run();
+		const startTimer = setTimeout(run, 400);
+		
+		const abortLoading = () => {
+			isAborted = true;
+			clearTimeout(startTimer);
+			if (generatorRef.current) {
+				generatorRef.current.return(undefined as any).catch(() => {});
+				generatorRef.current = null;
+			}
+		};
+
+		// Blur fires instantly when the user swipes back, allowing us to abort the 
+		// generator immediately without waiting for the animation to finish.
+		const unsubscribeBlur = (navigation as any).addListener("blur", abortLoading);
 
 		return () => {
-			abortRef.current = true;
+			abortLoading();
+			unsubscribeBlur();
 		};
-	}, [id]);
+	}, [id, navigation]);
 
 	const renderHeader = useCallback(() => {
 		if (!channel) return null;
@@ -160,8 +193,10 @@ export default function ChannelScreen() {
 				ListHeaderComponent={renderHeader}
 				contentContainerStyle={styles.listContent}
 				indicatorStyle="white"
+				onEndReached={loadMore}
+				onEndReachedThreshold={0.5}
 				ListFooterComponent={
-					isLoadingMore ? (
+					isLoadingMore || (videos.length === 0 && generatorRef.current) ? (
 						<View style={styles.footerLoader}>
 							<ActivityIndicator size="small" color="#555" />
 						</View>

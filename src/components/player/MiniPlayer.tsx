@@ -136,7 +136,7 @@ export default function MiniPlayer() {
 							presentationBackground("#000000"),
 						]}
 					>
-						<FullScreenPlayer onClose={() => setIsFullScreen(false)} />
+						<FullScreenPlayer />
 					</Group>
 				</BottomSheet>
 			</Host>

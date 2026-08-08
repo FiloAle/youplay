@@ -1,7 +1,6 @@
 import { ThemedText } from "@/components/themed-text";
-import { Colors, PLAYER_SHEET_FRACTION } from "@/constants/theme";
+import { PLAYER_SHEET_FRACTION } from "@/constants/theme";
 import { usePlayer } from "@/contexts/PlayerContext";
-import { useEvent } from "expo";
 import { VideoView } from "expo-video";
 import {
 	Button,
@@ -23,13 +22,12 @@ import {
 	listRowInsets,
 	listRowSpacing,
 } from "@expo/ui/swift-ui/modifiers";
-import { useEffect, useState, useRef } from "react";
+import { useState, useRef } from "react";
 import {
 	Dimensions,
 	Image,
 	StyleSheet,
 	View,
-	useColorScheme,
 	ActivityIndicator,
 } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
@@ -39,78 +37,18 @@ import Animated, {
 	withTiming,
 } from "react-native-reanimated";
 
-interface Props {
-	onClose: () => void;
-}
 
-function formatTime(seconds: number) {
-	if (!seconds || isNaN(seconds)) return "0:00";
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${m}:${s < 10 ? "0" : ""}${s}`;
-}
 
-export default function FullScreenPlayer({ onClose }: Props) {
+export default function FullScreenPlayer() {
 	const { currentVideo, queue, removeFromQueue, playVideo, player, isLoading } =
 		usePlayer();
 	const [showQueue, setShowQueue] = useState(false);
 
 	const videoRef = useRef<VideoView>(null);
 
-	const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
-
-	const isPlayingEvent = useEvent(player, "playingChange", {
-		isPlaying: player.playing,
-	});
-	const playbackRateEvent = useEvent(player, "playbackRateChange", {
-		playbackRate: player.playbackRate,
-	});
-	const [currentTime, setCurrentTime] = useState(0);
-
-	useEffect(() => {
-		// Use manual interval to sync time since useEvent for timeUpdate might not trigger fast enough or needs explicit config
-		const interval = setInterval(() => {
-			if (player) {
-				if (player.playing) {
-					setCurrentTime(player.currentTime);
-				}
-
-				// Prevent constant stalling when catching up to a live stream
-				if (
-					player.isLive &&
-					player.playbackRate > 1 &&
-					(player.currentOffsetFromLive ?? 0) < 15
-				) {
-					player.playbackRate = 1;
-				}
-			}
-		}, 500);
-		return () => clearInterval(interval);
-	}, [player]);
-
-	const colorScheme = useColorScheme();
-	const colors =
-		Colors[colorScheme === "unspecified" ? "light" : (colorScheme ?? "light")];
 	const insets = useSafeAreaInsets();
 
 	if (!currentVideo) return null;
-
-	const isPlaying = isPlayingEvent.isPlaying;
-	const isLive = player.isLive;
-	const liveOffset = player.currentOffsetFromLive ?? 0;
-
-	let duration =
-		currentVideo.durationSeconds > 0
-			? currentVideo.durationSeconds
-			: (player.duration ?? 0);
-	if (isLive) {
-		duration = currentTime + liveOffset;
-	}
-	if (isNaN(duration) || duration <= 0) {
-		duration = 0;
-	}
-
-	const remainingTime = Math.max(0, duration - currentTime);
 
 	const queueOpacity = useAnimatedStyle(
 		() => ({
@@ -198,8 +136,6 @@ export default function FullScreenPlayer({ onClose }: Props) {
 							nativeControls={true}
 							contentFit="cover"
 							fullscreenOptions={{ enable: true, orientation: "landscape" }}
-							onFullscreenEnter={() => setIsNativeFullscreen(true)}
-							onFullscreenExit={() => setIsNativeFullscreen(false)}
 						/>
 						{isLoading && (
 							<View

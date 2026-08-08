@@ -14,10 +14,8 @@ import {
 } from "@expo/ui/swift-ui";
 import {
 	glassEffect,
-	cornerRadius,
 	font,
 	tint,
-	padding,
 	frame,
 } from "@expo/ui/swift-ui/modifiers";
 

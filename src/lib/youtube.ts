@@ -151,11 +151,7 @@ class YouTubeService {
 		this.initializing = null;
 	}
 
-	// Always returns a fresh Innertube instance to avoid stale YouTube session
-	// caching which causes old videos and expired stream URLs.
-	private async freshClient(): Promise<Innertube> {
-		return Innertube.create({ lang: "it", location: "IT" });
-	}
+
 
 	async searchChannels(query: string): Promise<ChannelInfo[]> {
 		await this.init();
@@ -164,7 +160,9 @@ class YouTubeService {
 		const results = await this.yt.search(query, { type: "channel" });
 		const channels = results.results ?? [];
 
-		return channels.map((ch: any) => {
+		return channels
+			.filter((ch: any) => ch.author?.name && ch.author.name.trim() !== "")
+			.map((ch: any) => {
 			const thumbnails = ch.author?.thumbnails ?? [];
 			let thumbUrl =
 				thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : "";
@@ -182,6 +180,10 @@ class YouTubeService {
 	async getChannelInfo(id: string): Promise<ChannelInfo> {
 		await this.init();
 		if (!this.yt) throw new Error("YouTube.js not initialized");
+
+		// FORCED YIELD: Let the UI transition complete before freezing the JS thread
+		// with heavy InnerTube parsing.
+		await new Promise(resolve => setTimeout(resolve, 400));
 
 		const channel = await this.yt.getChannel(id);
 		const thumbnails = channel.metadata?.avatar ?? [];
@@ -323,7 +325,7 @@ class YouTubeService {
 	// Streams parsed, sorted VideoInfo[] one page at a time.
 	// Each yielded array contains ALL videos seen so far, sorted by date,
 	// so the UI can simply replace its state on each yield.
-	async *streamChannelVideos(channelId: string): AsyncGenerator<VideoInfo[]> {
+	async *streamChannelVideos(channelId: string, abortSignal?: () => boolean): AsyncGenerator<VideoInfo[]> {
 		let accumulated: VideoInfo[] = [];
 
 		// Yield RSS feed instantly for blazing fast initial load
@@ -337,8 +339,42 @@ class YouTubeService {
 			console.error("Failed to fetch RSS as preview", e);
 		}
 
-		const yt = await this.freshClient();
-		const channel = await yt.getChannel(channelId);
+		if (abortSignal?.()) return;
+
+		// FORCED YIELD: Before falling back to the heavy InnerTube parser,
+		// yield the JS thread for 300ms. This ensures any queued touch events
+		// and screen transitions are executed instantly without freezing.
+		await new Promise(resolve => setTimeout(resolve, 300));
+
+		if (abortSignal?.()) return;
+
+		if (abortSignal?.()) return;
+
+		let controller = new AbortController();
+		const yt = await Innertube.create({ 
+			lang: "it", 
+			location: "IT",
+			fetch: async (input, init) => {
+				if (abortSignal?.()) controller.abort();
+				try {
+					return await fetch(input, { ...init, signal: controller.signal });
+				} catch (e) {
+					throw e;
+				}
+			}
+		});
+
+		if (abortSignal?.()) return;
+		
+		let channel;
+		try {
+			channel = await yt.getChannel(channelId);
+		} catch (e: any) {
+			if (e.name === "AbortError") return;
+			throw e;
+		}
+
+		if (abortSignal?.()) return;
 		const channelName = channel.metadata?.title ?? "";
 
 		const MAX_PAGES = 20;
@@ -347,13 +383,18 @@ class YouTubeService {
 			let page = firstPage;
 			let pageCount = 0;
 			while (page && pageCount < MAX_PAGES) {
+				if (abortSignal?.()) break;
 				const raw: any[] = page.videos ?? [];
 				yield raw;
 				if (!page.has_continuation) break;
 				try {
+					// Yield before fetching continuation to avoid locking JS thread completely
+					await new Promise(resolve => setTimeout(resolve, 50));
+					if (abortSignal?.()) break;
+					
 					page = await page.getContinuation();
 					pageCount++;
-				} catch {
+				} catch (e) {
 					break;
 				}
 			}
@@ -367,7 +408,9 @@ class YouTubeService {
 		if (channel.has_videos) {
 			try {
 				const videosTab = await channel.getVideos();
+				if (abortSignal?.()) return;
 				for await (const rawPage of processTab(videosTab)) {
+					if (abortSignal?.()) return;
 					const newlyParsed = parsePage(rawPage);
 					if (newlyParsed.length > 0) {
 						const merged = [...accumulated, ...newlyParsed];
@@ -376,15 +419,20 @@ class YouTubeService {
 						yield accumulated;
 					}
 				}
-			} catch (e) {
+			} catch (e: any) {
+				if (e.name === "AbortError") return;
 				console.warn("Could not fetch videos tab", e);
 			}
 		}
 
+		if (abortSignal?.()) return;
+
 		if (channel.has_live_streams) {
 			try {
 				const liveTab = await channel.getLiveStreams();
+				if (abortSignal?.()) return;
 				for await (const rawPage of processTab(liveTab)) {
+					if (abortSignal?.()) return;
 					const newlyParsed = parsePage(rawPage);
 					if (newlyParsed.length > 0) {
 						const merged = [...accumulated, ...newlyParsed];
@@ -393,7 +441,8 @@ class YouTubeService {
 						yield accumulated;
 					}
 				}
-			} catch (e) {
+			} catch (e: any) {
+				if (e.name === "AbortError") return;
 				console.warn("Could not fetch live streams tab", e);
 			}
 		}
@@ -409,7 +458,7 @@ class YouTubeService {
 	}
 
 	// Fetches videos up to one week old using RSS (EXTREMELY FAST).
-	async getRecentChannelVideosRss(channelId: string): Promise<VideoInfo[]> {
+	private async getRecentChannelVideosRss(channelId: string, filterRecent: boolean = false): Promise<VideoInfo[]> {
 		const ONE_WEEK_SECONDS = 7 * 86400;
 		try {
 			const res = await fetch(
@@ -445,7 +494,7 @@ class YouTubeService {
 					const now = new Date();
 					const diffSeconds = (now.getTime() - date.getTime()) / 1000;
 					
-					if (diffSeconds <= ONE_WEEK_SECONDS) {
+					if (!filterRecent || diffSeconds <= ONE_WEEK_SECONDS) {
 						const titleMatch = entry.match(titleRegex);
 						const title = titleMatch ? titleMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') : "Senza titolo";
 						const chId = entry.match(channelIdRegex)?.[1] || channelId;
@@ -480,107 +529,76 @@ class YouTubeService {
 
 	// Used by Home screen to avoid blocking completely if RSS rate limits are hit.
 	async getHomeFeedForChannel(channelId: string): Promise<VideoInfo[]> {
-		let videos = await this.getRecentChannelVideosRss(channelId);
-		
-		if (videos.length === 0) {
-			try {
-				const yt = await this.freshClient();
-				const channel = await yt.getChannel(channelId);
-				const channelName = channel.metadata?.title ?? "";
-				
-				const parsePage = (rawVideos: any[]): VideoInfo[] =>
-					rawVideos
-						.map((v: any) => this.parseRawVideo(v, channelId, channelName))
-						.filter((v): v is VideoInfo => v !== null);
-
-				let fallbackVideos: VideoInfo[] = [];
-
-				if (channel.has_videos) {
-					try {
-						const videosTab = await channel.getVideos();
-						fallbackVideos = [...fallbackVideos, ...parsePage(videosTab.videos ?? [])];
-					} catch (e) {
-						console.warn("Fallback: Could not fetch videos tab", e);
-					}
-				}
-
-				if (channel.has_live_streams) {
-					try {
-						const liveTab = await channel.getLiveStreams();
-						fallbackVideos = [...fallbackVideos, ...parsePage(liveTab.videos ?? [])];
-					} catch (e) {
-						console.warn("Fallback: Could not fetch live streams tab", e);
-					}
-				}
-				
-				const uniqueFeed = Array.from(new Map(fallbackVideos.map(v => [v.videoId, v])).values());
-				videos = sortVideosByDate(uniqueFeed);
-			} catch (e) {
-				console.error("Fallback to InnerTube failed for channel", channelId, e);
-			}
+		try {
+			return await this.getRecentChannelVideosRss(channelId, true);
+		} catch (e) {
+			console.warn("RSS loading failed for Home feed", e);
+			return [];
 		}
-
-		return videos;
 	}
 
 	// Yields the feed progressively enriched with durations
-	async *enrichVideoDetails(videos: VideoInfo[], abortSignal?: () => boolean): AsyncGenerator<VideoInfo[]> {
+	async *enrichVideoDetails(videos: VideoInfo[], abortSignal?: () => boolean, pauseSignal?: () => boolean): AsyncGenerator<VideoInfo[]> {
 		await this.init();
 		const yt = this.yt!;
 		const updatedVideos = [...videos];
 
 		const videosToUpdate = updatedVideos.filter(v => v.duration === "Play" || v.durationSeconds === 0);
 
-		const CHUNK_SIZE = 3;
-		for (let i = 0; i < videosToUpdate.length; i += CHUNK_SIZE) {
+		for (let i = 0; i < videosToUpdate.length; i++) {
 			if (abortSignal?.()) break;
 
-			const chunk = videosToUpdate.slice(i, i + CHUNK_SIZE);
-			const chunkPromises = chunk.map(async (v) => {
-				try {
-					const info = await Promise.race([
-						yt.getBasicInfo(v.videoId),
-						new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
-					]);
-					
-					if (info && info.basic_info) {
-						const durSecs = info.basic_info.duration || 0;
-						
-						let durText = v.duration;
-						if (info.basic_info.is_live || info.basic_info.is_upcoming) {
-							durText = "DAL VIVO";
-						} else if (durSecs > 0) {
-							const h = Math.floor(durSecs / 3600);
-							const m = Math.floor((durSecs % 3600) / 60);
-							const s = durSecs % 60;
-							if (h > 0) {
-								durText = `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-							} else {
-								durText = `${m}:${s.toString().padStart(2, "0")}`;
-							}
-						}
+			while (pauseSignal && pauseSignal()) {
+				await new Promise(resolve => setTimeout(resolve, 500));
+				if (abortSignal?.()) return;
+			}
 
-						const index = updatedVideos.findIndex(vid => vid.videoId === v.videoId);
-						if (index !== -1) {
-							updatedVideos[index] = {
-								...updatedVideos[index],
-								duration: durText,
-								durationSeconds: durSecs,
-								viewCount: info.basic_info.view_count 
-									? formatViewCount(info.basic_info.view_count.toString()) 
-									: updatedVideos[index].viewCount
-							};
+			const v = videosToUpdate[i];
+			try {
+				const info = await Promise.race([
+					yt.getBasicInfo(v.videoId),
+					new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
+				]);
+				
+				if (info && info.basic_info) {
+					const durSecs = info.basic_info.duration || 0;
+					
+					let durText = v.duration;
+					if (info.basic_info.is_live || info.basic_info.is_upcoming) {
+						durText = "DAL VIVO";
+					} else if (durSecs > 0) {
+						const h = Math.floor(durSecs / 3600);
+						const m = Math.floor((durSecs % 3600) / 60);
+						const s = durSecs % 60;
+						if (h > 0) {
+							durText = `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+						} else {
+							durText = `${m}:${s.toString().padStart(2, "0")}`;
 						}
 					}
-				} catch (e) {
-					console.warn(`Failed to get basic info for ${v.videoId}`, e);
+
+					const index = updatedVideos.findIndex(vid => vid.videoId === v.videoId);
+					if (index !== -1) {
+						updatedVideos[index] = {
+							...updatedVideos[index],
+							duration: durText,
+							durationSeconds: durSecs,
+							viewCount: info.basic_info.view_count 
+								? formatViewCount(info.basic_info.view_count.toString()) 
+								: updatedVideos[index].viewCount
+						};
+					}
 				}
-			});
-			
-			await Promise.all(chunkPromises);
+			} catch (e) {
+				console.warn(`Failed to get basic info for ${v.videoId}`, e);
+			}
 			
 			if (abortSignal?.()) break;
 			yield [...updatedVideos];
+
+			// FORCED YIELD: Prevent this background task from hogging the JS thread
+			// We pause for 500ms between EACH video so the UI remains butter smooth.
+			await new Promise(resolve => setTimeout(resolve, 500));
 		}
 	}
 

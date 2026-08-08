@@ -23,7 +23,8 @@ import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import {
 	ActivityIndicator,
 	Animated,
@@ -41,6 +42,16 @@ export default function HomeScreen() {
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 	const [showManageModal, setShowManageModal] = useState(false);
+
+	const isFocusedRef = useRef(false);
+	useFocusEffect(
+		useCallback(() => {
+			isFocusedRef.current = true;
+			return () => {
+				isFocusedRef.current = false;
+			};
+		}, []),
+	);
 
 	const filteredFeed = useMemo(() => {
 		if (!selectedCategory) return feed;
@@ -85,10 +96,25 @@ export default function HomeScreen() {
 				if (generationRef.current !== currentGeneration) return;
 
 				const chunk = subscriptions.slice(i, i + CHUNK_SIZE);
-				const chunkPromises = chunk.map((sub) =>
-					youtubeService.getHomeFeedForChannel(sub.id),
-				);
-				const results = await Promise.all(chunkPromises);
+				const results: VideoInfo[][] = [];
+				for (const sub of chunk) {
+					let feedForSub: VideoInfo[] = [];
+					for (let attempt = 1; attempt <= 3; attempt++) {
+						try {
+							feedForSub = await youtubeService.getHomeFeedForChannel(sub.id);
+							break;
+						} catch (e) {
+							if (attempt === 3) {
+								console.warn(`Failed to load feed for ${sub.id} after 3 attempts:`, e);
+							} else {
+								await new Promise((resolve) => setTimeout(resolve, 500));
+							}
+						}
+					}
+					results.push(feedForSub);
+					// Yield after each channel to keep JS thread fully responsive
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
 
 				if (generationRef.current !== currentGeneration) return;
 
@@ -117,6 +143,7 @@ export default function HomeScreen() {
 			for await (const updatedFeed of youtubeService.enrichVideoDetails(
 				currentFeed,
 				() => generationRef.current !== currentGeneration,
+				() => !isFocusedRef.current,
 			)) {
 				if (generationRef.current !== currentGeneration) break;
 				setFeed(updatedFeed);
