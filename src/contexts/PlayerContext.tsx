@@ -27,7 +27,11 @@ interface PlayerContextType {
 	removeFromQueue: (index: number) => void;
 	playNext: () => Promise<void>;
 	playPrevious: () => Promise<void>;
+	maxQuality: number;
+	setMaxQuality: (height: number) => void;
 }
+
+const QUALITY_KEY = "player_max_quality";
 
 const PlayerContext = createContext<PlayerContextType | null>(null);
 
@@ -38,6 +42,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [history, setHistory] = useState<VideoInfo[]>([]);
 	const [toastVisible, setToastVisible] = useState(false);
 	const [toastMessage, setToastMessage] = useState("");
+	const [maxQuality, setMaxQualityState] = useState(0);
 
 	const showToast = (message: string) => {
 		setToastMessage(message);
@@ -56,6 +61,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 			interruptionMode: "doNotMix",
 		});
 	}, [player]);
+
+	useEffect(() => {
+		AsyncStorage.getItem(QUALITY_KEY).then((saved) => {
+			if (saved) setMaxQuality(parseInt(saved, 10));
+		});
+	}, []);
+
+	const setMaxQuality = (height: number) => {
+		setMaxQualityState(height);
+		player.maxVideoHeight = height;
+		AsyncStorage.setItem(QUALITY_KEY, height.toString());
+	};
 
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
@@ -232,6 +249,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				removeFromQueue,
 				playNext,
 				playPrevious,
+				maxQuality,
+				setMaxQuality,
 			}}
 		>
 			{children}

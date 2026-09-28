@@ -60,13 +60,15 @@ export function parseRelativeDate(text: string): number {
 	if (
 		lower.includes("day") ||
 		lower.includes("giorno") ||
-		lower.includes("giorni")
+		lower.includes("giorni") ||
+		lower.match(/\bgg\b/)
 	)
 		return num * 86400;
 	if (
 		lower.includes("week") ||
 		lower.includes("settimana") ||
 		lower.includes("settimane") ||
+		lower.includes("sett") ||
 		lower.match(/\bwk\b/)
 	)
 		return num * 86400 * 7;
@@ -115,6 +117,29 @@ export function formatISODateToRelative(isoString: string): string {
 	if (mo < 12) return `${mo} mes${mo === 1 ? 'e' : 'i'} fa`;
 	const y = Math.floor(seconds / (86400 * 365));
 	return `${y} ann${y === 1 ? 'o' : 'i'} fa`;
+}
+
+// "LIVE ALLE 21:00" if scheduled for today, otherwise "LIVE IL 25/09".
+export function formatUpcomingLabel(start: Date): string {
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	if (start.toDateString() === new Date().toDateString()) {
+		return `LIVE ALLE ${pad(start.getHours())}:${pad(start.getMinutes())}`;
+	}
+	return `LIVE IL ${pad(start.getDate())}/${pad(start.getMonth() + 1)}`;
+}
+
+// LockupView metadata for scheduled streams: "Programmato per il giorno 25/09/26, 16:00".
+function parseScheduledStart(video: any): Date | null {
+	for (const row of video.metadata?.metadata?.metadata_rows ?? []) {
+		for (const part of row.metadata_parts ?? []) {
+			const text: string = part.text?.text ?? "";
+			const m = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s*(\d{1,2}):(\d{2})/);
+			if (!m || !/programmat|scheduled/i.test(text)) continue;
+			const year = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+			return new Date(year, +m[2] - 1, +m[1], +m[4], +m[5]);
+		}
+	}
+	return null;
 }
 
 export function formatViewCount(viewsStr: string): string {
@@ -275,6 +300,12 @@ class YouTubeService {
 
 		if (!videoId || !duration) return null;
 
+		const scheduledStart = parseScheduledStart(video);
+		if (scheduledStart) {
+			duration = formatUpcomingLabel(scheduledStart);
+			durationSeconds = 0;
+		}
+
 		let viewCount = "";
 		let publishedDate = "";
 		for (const row of video.metadata?.metadata?.metadata_rows ?? []) {
@@ -319,6 +350,7 @@ class YouTubeService {
 			thumbnailUrl,
 			channelName,
 			channelId,
+			publishedTimestamp: scheduledStart?.getTime(),
 		};
 	}
 
@@ -481,6 +513,7 @@ class YouTubeService {
 			const channelIdRegex = /<yt:channelId>([^<]+)<\/yt:channelId>/;
 			const channelNameRegex = /<author>\s*<name>([^<]+)<\/name>/;
 			const publishedRegex = /<published>([^<]+)<\/published>/;
+			const linkRegex = /<link rel="alternate" href="([^"]+)"/;
 			const mediaGroupRegex = /<media:group>([\s\S]*?)<\/media:group>/;
 			
 			const videos: VideoInfo[] = [];
@@ -489,6 +522,8 @@ class YouTubeService {
 				const videoId = entry.match(videoIdRegex)?.[1];
 				const published = entry.match(publishedRegex)?.[1];
 				
+				if (entry.match(linkRegex)?.[1]?.includes("/shorts/")) continue;
+
 				if (videoId && published) {
 					const date = new Date(published);
 					const now = new Date();
@@ -564,7 +599,10 @@ class YouTubeService {
 					const durSecs = info.basic_info.duration || 0;
 					
 					let durText = v.duration;
-					if (info.basic_info.is_live || info.basic_info.is_upcoming) {
+					const start = info.basic_info.start_timestamp;
+					if (info.basic_info.is_upcoming && start) {
+						durText = formatUpcomingLabel(start);
+					} else if (info.basic_info.is_live || info.basic_info.is_upcoming) {
 						durText = "DAL VIVO";
 					} else if (durSecs > 0) {
 						const h = Math.floor(durSecs / 3600);
@@ -602,96 +640,89 @@ class YouTubeService {
 		}
 	}
 
+	// Clients tried in order. VISIONOS/IOS return an HLS manifest (adaptive, up to 4K,
+	// native to AVPlayer); ANDROID only exposes a 360p progressive fallback.
+	// ANDROID_VR/WEB are excluded: VR URLs now 403 without a PO token, WEB needs a
+	// JS evaluator for deciphering.
+	private static readonly STREAM_CLIENTS = ["VISIONOS", "IOS", "ANDROID", "MWEB"] as const;
+
+	// Quick range request to make sure googlevideo actually serves the URL
+	// before handing it to AVPlayer (which only reports a generic error).
+	private async isStreamReachable(url: string, ranged = true): Promise<boolean> {
+		try {
+			const res = await fetch(url, ranged ? { headers: { Range: "bytes=0-0" } } : undefined);
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
+	private async pickStream(info: any): Promise<AudioStreamInfo | null> {
+		const hls = info.streaming_data?.hls_manifest_url;
+		if (hls && (await this.isStreamReachable(hls, false))) {
+			return {
+				url: hls,
+				codec: "hls",
+				mimeType: "application/x-mpegURL",
+				bitrate: 0,
+				sampleRate: 44100,
+				channels: 2,
+				contentLengthBytes: 0,
+			};
+		}
+
+		const progressive = (info.streaming_data?.formats ?? [])
+			.filter((f: any) => f.has_audio && f.has_video && f.url)
+			.sort((a: any, b: any) => {
+				const aH = a.height ?? 0;
+				const bH = b.height ?? 0;
+				if (aH <= 720 && bH > 720) return -1;
+				if (bH <= 720 && aH > 720) return 1;
+				return bH - aH;
+			});
+
+		for (const fmt of progressive) {
+			if (!(await this.isStreamReachable(fmt.url))) continue;
+			return {
+				url: fmt.url,
+				codec: "progressive",
+				mimeType: fmt.mime_type,
+				bitrate: fmt.bitrate ?? 0,
+				sampleRate: fmt.audio_sample_rate ?? 0,
+				channels: fmt.audio_channels ?? 2,
+				contentLengthBytes: fmt.content_length ?? 0,
+			};
+		}
+
+		return null;
+	}
+
 	async getAudioStream(videoId: string): Promise<AudioStreamInfo | null> {
 		await this.init();
 		const yt = this.yt!;
+		let lastReason: string | undefined;
 
-		let info;
-		// Usiamo ANDROID_VR come prima scelta perché non dà errore 403 con l'AVPlayer di iOS.
-		const clients = ["ANDROID_VR", "ANDROID", "IOS", "WEB"];
-		for (const client of clients) {
+		for (const client of YouTubeService.STREAM_CLIENTS) {
 			try {
-				info = await yt.getBasicInfo(videoId, { client: client as any });
-				
-				const hasAudioUrl = (info?.streaming_data?.adaptive_formats ?? []).some(
-					(f: any) => f.has_audio && !f.has_video && (f.url || f.signature_cipher || f.cipher)
-				);
-				
-				if (hasAudioUrl || client === "ANDROID_VR") {
-					console.log(`[YouTube] Client selezionato: ${client} (hasAudioUrl: ${hasAudioUrl})`);
-					break;
+				const info = await yt.getBasicInfo(videoId, { client });
+				const status = info.playability_status?.status;
+				if (status && status !== "OK") {
+					lastReason = info.playability_status?.reason;
+					if (status === "LIVE_STREAM_OFFLINE") break;
+					continue;
+				}
+
+				const stream = await this.pickStream(info);
+				if (stream) {
+					console.log(`[YouTube] Stream ${stream.codec} via ${client}`);
+					return stream;
 				}
 			} catch (e) {
-				console.log(`[YouTube] Client ${client} fallito, provo il prossimo...`);
-				continue;
+				console.log(`[YouTube] Client ${client} fallito`, e);
 			}
 		}
 
-		if (!info) throw new Error("Impossibile recuperare le info del video.");
-
-		try {
-			if (info.playability_status?.status === "UNPLAYABLE") {
-				throw new Error(
-					info.playability_status.reason ||
-						"Video non riproducibile (forse riservato agli abbonati)",
-				);
-			}
-			if (info.playability_status?.status === "LIVE_STREAM_OFFLINE") {
-				throw new Error(
-					info.playability_status.reason ||
-						"Questo evento dal vivo non è ancora iniziato.",
-				);
-			}
-
-			const progressive = (info.streaming_data?.formats ?? []).filter(
-				(f: any) => f.has_audio && (f.has_video || f.width > 0) && (f.url || f.signature_cipher || f.cipher),
-			);
-
-			if (progressive.length > 0) {
-				// Find highest quality that is <= 720p to save bandwidth, or highest available
-				const fmt = progressive.sort((a: any, b: any) => {
-					const aHeight = a.height ?? 0;
-					const bHeight = b.height ?? 0;
-					if (aHeight <= 720 && bHeight > 720) return -1;
-					if (bHeight <= 720 && aHeight > 720) return 1;
-					return bHeight - aHeight;
-				})[0];
-				
-				console.log(`[YouTube] Formato PROGRESSIVE (AV) selezionato: ${fmt.mime_type} (${fmt.height}p)`);
-				
-				let finalUrl = fmt.url;
-				if (!finalUrl && (fmt.signature_cipher || fmt.cipher) && typeof fmt.decipher === 'function') {
-					finalUrl = await fmt.decipher(yt.session.player);
-				}
-
-				return {
-					url: finalUrl ?? "",
-					codec: "progressive",
-					mimeType: fmt.mime_type,
-					bitrate: fmt.bitrate ?? 0,
-					sampleRate: fmt.audio_sample_rate ?? 0,
-					channels: fmt.audio_channels ?? 2,
-					contentLengthBytes: fmt.content_length ?? 0,
-				};
-			}
-
-			// Fallback: HLS manifest
-			if (info.streaming_data?.hls_manifest_url) {
-				return {
-					url: info.streaming_data.hls_manifest_url,
-					codec: "hls",
-					mimeType: "application/x-mpegURL",
-					bitrate: 0,
-					sampleRate: 44100,
-					channels: 2,
-					contentLengthBytes: 0,
-				};
-			}
-
-			throw new Error("Nessun flusso audio/video compatibile trovato");
-		} catch (e: any) {
-			throw e;
-		}
+		throw new Error(lastReason || "Nessun flusso audio/video compatibile trovato");
 	}
 }
 

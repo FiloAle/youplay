@@ -5,7 +5,11 @@ import { VideoView } from "expo-video";
 import {
 	Button,
 	Host,
+	HStack,
 	List,
+	Menu,
+	Picker,
+	Text,
 	SwipeActions,
 	Image as SwiftUI_Image,
 } from "@expo/ui/swift-ui";
@@ -21,6 +25,8 @@ import {
 	listRowBackground,
 	listRowInsets,
 	listRowSpacing,
+	pickerStyle,
+	tag,
 } from "@expo/ui/swift-ui/modifiers";
 import { useState, useRef } from "react";
 import {
@@ -38,10 +44,36 @@ import Animated, {
 } from "react-native-reanimated";
 
 
+const QUALITY_OPTIONS = [
+	{ height: 0, label: "Automatica" },
+	{ height: 1080, label: "1080p" },
+	{ height: 720, label: "720p" },
+	{ height: 480, label: "480p" },
+	{ height: 360, label: "360p" },
+];
+
+const glassIconButton = [
+	labelStyle("iconOnly"),
+	font({ size: 16, weight: "semibold" }),
+	tint("#FFF"),
+	frame({ width: 36, height: 36 }),
+	glassEffect({
+		glass: { variant: "regular", interactive: true },
+		shape: "ellipse",
+	}),
+];
 
 export default function FullScreenPlayer() {
-	const { currentVideo, queue, removeFromQueue, playVideo, player, isLoading } =
-		usePlayer();
+	const {
+		currentVideo,
+		queue,
+		removeFromQueue,
+		playVideo,
+		player,
+		isLoading,
+		maxQuality,
+		setMaxQuality,
+	} = usePlayer();
 	const [showQueue, setShowQueue] = useState(false);
 
 	const videoRef = useRef<VideoView>(null);
@@ -188,21 +220,32 @@ export default function FullScreenPlayer() {
 								justifyContent: "center",
 							}}
 						>
-							<Button
-								label="Queue"
-								systemImage="list.bullet"
-								onPress={() => setShowQueue(!showQueue)}
-								modifiers={[
-									labelStyle("iconOnly"),
-									font({ size: 16, weight: "semibold" }),
-									tint("#FFF"),
-									frame({ width: 36, height: 36 }),
-									glassEffect({
-										glass: { variant: "regular", interactive: true },
-										shape: "ellipse",
-									}),
-								]}
-							/>
+							<HStack spacing={12}>
+								<Menu
+									label="Qualità"
+									systemImage="slider.horizontal.3"
+									modifiers={glassIconButton}
+								>
+									<Picker
+										label="Qualità massima"
+										selection={maxQuality}
+										onSelectionChange={setMaxQuality}
+										modifiers={[pickerStyle("inline")]}
+									>
+										{QUALITY_OPTIONS.map((q) => (
+											<Text key={q.height} modifiers={[tag(q.height)]}>
+												{q.label}
+											</Text>
+										))}
+									</Picker>
+								</Menu>
+								<Button
+									label="Queue"
+									systemImage="list.bullet"
+									onPress={() => setShowQueue(!showQueue)}
+									modifiers={glassIconButton}
+								/>
+							</HStack>
 						</Host>
 					</View>
 				</Animated.View>
@@ -244,16 +287,7 @@ export default function FullScreenPlayer() {
 								label="Close"
 								systemImage="chevron.backward"
 								onPress={() => setShowQueue(false)}
-								modifiers={[
-									labelStyle("iconOnly"),
-									font({ size: 16, weight: "semibold" }),
-									tint("#FFF"),
-									frame({ width: 36, height: 36 }),
-									glassEffect({
-										glass: { variant: "regular", interactive: true },
-										shape: "ellipse",
-									}),
-								]}
+								modifiers={glassIconButton}
 							/>
 						</Host>
 						<ThemedText

@@ -1,0 +1,102 @@
+diff --git a/node_modules/expo-video/build/VideoPlayer.types.d.ts b/node_modules/expo-video/build/VideoPlayer.types.d.ts
+index 8acf5e5..7bc0dcc 100644
+--- a/node_modules/expo-video/build/VideoPlayer.types.d.ts
++++ b/node_modules/expo-video/build/VideoPlayer.types.d.ts
+@@ -81,6 +81,11 @@ export declare class VideoPlayer extends SharedObject<VideoPlayerEvents> {
+      * @default true
+      */
+     preservesPitch: boolean;
++    /**
++     * Maximum video height (e.g. 720) of the HLS variant the player may select. `0` means no limit.
++     * @platform ios
++     */
++    maxVideoHeight: number;
+     /**
+      * Float value indicating the interval in seconds at which the player will emit the [`timeUpdate`](#videoplayerevents) event.
+      * When the value is equal to `0`, the event will not be emitted.
+diff --git a/node_modules/expo-video/ios/VideoManager.swift b/node_modules/expo-video/ios/VideoManager.swift
+index c2ebd04..7a2cef8 100644
+--- a/node_modules/expo-video/ios/VideoManager.swift
++++ b/node_modules/expo-video/ios/VideoManager.swift
+@@ -147,9 +147,9 @@ class VideoManager {
+       audioSessionCategoryOptions.remove(.duckOthers)
+     }
+ 
+-    if audioSession.categoryOptions != audioSessionCategoryOptions || audioSession.category != .playback || audioSession.mode != .moviePlayback {
++    if audioSession.categoryOptions != audioSessionCategoryOptions || audioSession.category != .playback || audioSession.mode != .default {
+       do {
+-        try audioSession.setCategory(.playback, mode: .moviePlayback, options: audioSessionCategoryOptions)
++        try audioSession.setCategory(.playback, mode: .default, options: audioSessionCategoryOptions)
+       } catch {
+         log.warn("[expo-video] Failed to set audio session category. This might cause issues with audio playback and Picture in Picture. \(error.localizedDescription)")
+       }
+diff --git a/node_modules/expo-video/ios/VideoModule.swift b/node_modules/expo-video/ios/VideoModule.swift
+index 2bf2f75..25ca836 100644
+--- a/node_modules/expo-video/ios/VideoModule.swift
++++ b/node_modules/expo-video/ios/VideoModule.swift
+@@ -228,6 +228,13 @@ public final class VideoModule: Module {
+         return player.ref.currentItem?.duration.isIndefinite ?? false
+       }
+ 
++      Property("maxVideoHeight") { player -> Double in
++        return player.maxVideoHeight
++      }
++      .set { (player, maxVideoHeight: Double) in
++        player.maxVideoHeight = maxVideoHeight
++      }
++
+       Property("preservesPitch") { player -> Bool in
+         return player.preservesPitch
+       }
+diff --git a/node_modules/expo-video/ios/VideoPlayer.swift b/node_modules/expo-video/ios/VideoPlayer.swift
+index ab8807e..954191d 100644
+--- a/node_modules/expo-video/ios/VideoPlayer.swift
++++ b/node_modules/expo-video/ios/VideoPlayer.swift
+@@ -35,6 +35,7 @@ internal final class VideoPlayer: SharedRef<AVPlayer>, Hashable, VideoPlayerObse
+       if #available(iOS 16.0, tvOS 16.0, *) {
+         ref.defaultRate = playbackRate
+       }
++      ref.currentItem?.audioTimePitchAlgorithm = preservesPitch ? .spectral : .varispeed
+       ref.rate = playbackRate
+     }
+   }
+@@ -67,6 +68,23 @@ internal final class VideoPlayer: SharedRef<AVPlayer>, Hashable, VideoPlayerObse
+     }
+   }
+ 
++  // Caps the HLS variant AVPlayer may pick. 0 = no limit (automatic).
++  var maxVideoHeight: Double = 0 {
++    didSet {
++      guard maxVideoHeight != oldValue else { return }
++      ref.currentItem?.preferredMaximumResolution = maxResolution
++      // AVPlayer keeps playing already-buffered segments at the old variant for a long time,
++      // so reload the item (keeping playhead and play state) to apply the new cap right away.
++      reloadCurrentSource()
++    }
++  }
++
++  // Square bound on the short side, so portrait videos are capped the same way as landscape ones.
++  private var maxResolution: CGSize {
++    guard maxVideoHeight > 0 else { return .zero }
++    return CGSize(width: (maxVideoHeight * 16 / 9).rounded(.up), height: maxVideoHeight)
++  }
++
+   var preservesPitch = true {
+     didSet {
+       ref.currentItem?.audioTimePitchAlgorithm = preservesPitch ? .spectral : .varispeed
+@@ -216,6 +234,7 @@ internal final class VideoPlayer: SharedRef<AVPlayer>, Hashable, VideoPlayerObse
+ 
+     playerItem.audioTimePitchAlgorithm = preservesPitch ? .spectral : .varispeed
+     playerItem.preferredForwardBufferDuration = bufferOptions.preferredForwardBufferDuration
++    playerItem.preferredMaximumResolution = maxResolution
+ 
+     // The current item has to be replaced from the main thread. When replacing from other queues
+     // sometimes the KVOs will try to deliver updates after the item has been changed or player deallocated,
+@@ -253,6 +272,7 @@ internal final class VideoPlayer: SharedRef<AVPlayer>, Hashable, VideoPlayerObse
+ 
+     playerItem.audioTimePitchAlgorithm = self.preservesPitch ? .spectral : .varispeed
+     playerItem.preferredForwardBufferDuration = self.bufferOptions.preferredForwardBufferDuration
++    playerItem.preferredMaximumResolution = self.maxResolution
+ 
+     // The current item has to be replaced from the main thread. When replacing from other queues
+     // sometimes the KVOs will try to deliver updates after the item has been changed or player deallocated,

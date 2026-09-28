@@ -10,7 +10,7 @@
 		"ios": {
 			"icon": "./assets/youplay.icon",
 			"bundleIdentifier": "com.filippoaleee.youplay",
-			"minimumOsVersion": "16.0",
+			"deploymentTarget": "16.4",
 			"infoPlist": {
 				"UIBackgroundModes": ["audio"],
 				"UIFileSharingEnabled": true,
@@ -51,7 +51,13 @@
 			],
 			"expo-audio",
 			"expo-sharing",
-			"expo-video"
+			"expo-video",
+			"expo-image",
+			"expo-web-browser",
+			"expo-font",
+			"expo-status-bar",
+			"expo-asset",
+			"./plugins/withSceneDelegate"
 		],
 		"experiments": {
 			"typedRoutes": true,
