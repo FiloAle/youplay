@@ -9,6 +9,7 @@ struct PlayerDetails: View {
 	@Environment(AppRouter.self) private var router
 	@State private var related: [Video] = []
 	@State private var fetchedChannel: Channel?
+	@State private var isShowingQueue = false
 
 	private static let maxRelatedVideos = 30
 
@@ -17,26 +18,16 @@ struct PlayerDetails: View {
 			header
 				.contentRow(top: Spacing.lg)
 
-			if !player.queue.isEmpty {
-				SectionTitle(title: "In coda")
-				ForEach(player.queue) { queued in
-					VideoRow(video: queued, onRemoveFromQueue: { player.removeFromQueue(queued) }) {
-						player.playFromQueue(queued)
-					}
-				}
-				.onDelete(perform: player.removeFromQueue)
-				.onMove(perform: player.moveInQueue)
-			}
-
-			if !unqueuedRelated.isEmpty {
+			if !related.isEmpty {
 				SectionTitle(title: "Altro da \(relatedCategory ?? video.channelName)")
 				// Within a single channel, repeating its name on every row adds nothing.
-				ForEach(unqueuedRelated) { VideoRow(video: $0, showsChannel: relatedCategory != nil) }
+				ForEach(related) { VideoRow(video: $0, showsChannel: relatedCategory != nil) }
 			}
 		}
 		.contentList()
 		.contentMargins(.bottom, Spacing.xl, for: .scrollContent)
 		.id(video.id)
+		.sheet(isPresented: $isShowingQueue) { QueueSheet() }
 		.task(id: video.channelID) { await loadChannel() }
 		.task(id: RelatedKey(videoID: video.id, channelIDs: relatedChannelIDs)) { await loadRelated() }
 	}
@@ -55,7 +46,7 @@ struct PlayerDetails: View {
 					}
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
-				VideoOptionsMenu()
+				VideoOptionsMenu { isShowingQueue = true }
 			}
 
 			description
@@ -105,11 +96,6 @@ struct PlayerDetails: View {
 			?? Channel(id: video.channelID, name: video.channelName)
 	}
 
-	private var unqueuedRelated: [Video] {
-		let queued = Set(player.queue.map(\.id))
-		return related.filter { !queued.contains($0.id) }
-	}
-
 	private var relatedCategory: String? {
 		subscriptions.channel(id: video.channelID)?.category
 	}
@@ -140,8 +126,10 @@ private struct RelatedKey: Hashable {
 	let channelIDs: [String]
 }
 
-/// Playback options, which iOS doesn't allow adding to the player's own menu.
+/// Options of what's playing. iOS doesn't allow adding them to the player's own menu.
 private struct VideoOptionsMenu: View {
+	let onShowQueue: () -> Void
+
 	@Environment(PlayerModel.self) private var player
 
 	private static let qualities = [
@@ -154,10 +142,18 @@ private struct VideoOptionsMenu: View {
 
 	var body: some View {
 		FirstLineMenu(font: Typography.title) {
-			Picker("Qualità", selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
+			Picker(selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
 				ForEach(Self.qualities, id: \.height) { Text($0.label).tag($0.height) }
+			} label: {
+				Label("Qualità", systemImage: "slider.horizontal.3")
 			}
-			.pickerStyle(.inline)
+			.pickerStyle(.menu)
+
+			Button(queueTitle, systemImage: "list.bullet", action: onShowQueue)
 		}
+	}
+
+	private var queueTitle: String {
+		player.queue.isEmpty ? "Coda" : "Coda (\(player.queue.count))"
 	}
 }

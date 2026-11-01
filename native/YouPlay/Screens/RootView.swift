@@ -9,7 +9,7 @@ struct RootView: View {
 		@Bindable var player = player
 		@Bindable var router = router
 
-		ZStack(alignment: .bottom) {
+		ZStack(alignment: .top) {
 			TabView(selection: $router.tab) {
 				Tab("Home", systemImage: "house.fill", value: AppTab.home) {
 					HomeScreen()
@@ -27,9 +27,11 @@ struct RootView: View {
 				.ignoresSafeArea(.keyboard)
 
 			if let toast = player.toast {
+				// On the toolbar's line, between its buttons and aligned to them: it's the only place that's
+				// free on every screen, since the bottom has the tab bar and the mini player.
 				ToastView(message: toast)
-					.padding(.bottom, tabBarInset + PlayerGeometry.miniVideoHeight + Spacing.lg)
-					.transition(.opacity.combined(with: .scale(scale: 0.9)))
+					.frame(height: Metrics.toolbarHeight)
+					.transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
 					.allowsHitTesting(false)
 			}
 		}

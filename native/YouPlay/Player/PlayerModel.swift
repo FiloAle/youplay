@@ -88,21 +88,23 @@ final class PlayerModel {
 	// MARK: Queue
 
 	func enqueue(_ video: Video) {
-		if current == nil {
-			load(video, autoplay: false)
+		if current?.id == video.id {
+			showToast("Già in riproduzione")
+		} else if queue.contains(where: { $0.id == video.id }) {
+			showToast("Già in coda")
 		} else {
-			queue.append(video)
+			if current == nil {
+				load(video, autoplay: false)
+			} else {
+				queue.append(video)
+			}
+			showToast("Aggiunto alla coda")
 		}
-		showToast("Aggiunto alla coda")
 	}
 
 	func playFromQueue(_ video: Video) {
 		queue.removeAll { $0.id == video.id }
 		open(video)
-	}
-
-	func removeFromQueue(_ video: Video) {
-		queue.removeAll { $0.id == video.id }
 	}
 
 	func removeFromQueue(at offsets: IndexSet) {

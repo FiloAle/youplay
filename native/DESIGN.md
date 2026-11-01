@@ -46,7 +46,7 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 | Component | Purpose |
 |---|---|
 | `RemoteImage` | Cached, downsampled image that fills its frame |
-| `VideoThumbnail` | 16:9 image with duration or live badge |
+| `VideoThumbnail` | A video's 16:9 image with duration or live badge, full size or compact |
 | `Avatar` | Round channel image |
 | `VideoRow` | Video in any list as a full-width card, with queue and channel actions |
 | `ChannelRow` | Channel in any list |
@@ -55,7 +55,7 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 | `ExpandableText` | Long text in a box, collapsed to three lines |
 | `MoreMenuLabel`, `FirstLineMenu` | The "…" that opens a menu of secondary actions, alone or aligned to a title's first line |
 | `VideoControlButton` | Icon in a dark circle, readable on top of any video |
-| `ToastView` | Short confirmation over the content |
+| `ToastView` | Short confirmation at the top of the screen, clear of the tab bar and the mini player |
 | `CategoryMenu` | Picks a followed channel's category |
 
 ## Interaction rules

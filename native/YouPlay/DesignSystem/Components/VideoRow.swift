@@ -4,21 +4,16 @@ import SwiftUI
 struct VideoRow: View {
 	let video: Video
 	var showsChannel = true
-	/// For a queued video. It replaces long press, which then drags the row to reorder it.
-	var onRemoveFromQueue: (() -> Void)?
-	/// Replaces the default action of opening the video.
-	var action: (() -> Void)?
 
 	@Environment(PlayerModel.self) private var player
 	@Environment(AppRouter.self) private var router
-	@State private var details: VideoDetails?
 
 	var body: some View {
 		Button {
-			if let action { action() } else { player.open(video) }
+			player.open(video)
 		} label: {
 			VStack(alignment: .leading, spacing: Spacing.sm) {
-				VideoThumbnail(url: video.largeThumbnailURL, fallbackURL: video.thumbnailURL, badge: badge)
+				VideoThumbnail(video: video)
 
 				HStack(alignment: .top, spacing: Spacing.xs) {
 					Text(video.title)
@@ -35,9 +30,8 @@ struct VideoRow: View {
 			.contentShape(.rect)
 		}
 		.buttonStyle(RowButtonStyle())
-		.contextMenu(menuItems: { if onRemoveFromQueue == nil { actions } })
+		.contextMenu { actions }
 		.contentRow(top: Spacing.md, bottom: Spacing.md)
-		.task(id: video.id) { await loadDetailsIfNeeded() }
 	}
 
 	/// Where the channel is already obvious, its name leaves the space to the views.
@@ -59,32 +53,14 @@ struct VideoRow: View {
 
 	@ViewBuilder
 	private var actions: some View {
-		if let onRemoveFromQueue {
-			Button("Rimuovi dalla coda", systemImage: "minus.circle", role: .destructive, action: onRemoveFromQueue)
-		} else {
-			Button("Aggiungi alla coda", systemImage: "text.line.last.and.arrowtriangle.forward") {
-				player.enqueue(video)
-			}
+		Button("Aggiungi alla coda", systemImage: "text.line.last.and.arrowtriangle.forward") {
+			player.enqueue(video)
 		}
 		if showsChannel {
 			Button("Vai al canale", systemImage: "person.crop.circle") {
 				router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
 			}
 		}
-	}
-
-	private var badge: String? {
-		if details?.isLive == true { return "DAL VIVO" }
-		if let scheduledAt = details?.scheduledAt ?? video.scheduledAt { return Format.upcoming(scheduledAt) }
-		return video.duration ?? details?.duration
-	}
-
-	/// Waits a moment so that rows scrolled past quickly don't cause any request.
-	private func loadDetailsIfNeeded() async {
-		guard video.duration == nil, video.scheduledAt == nil else { return }
-		try? await Task.sleep(for: .milliseconds(150))
-		guard !Task.isCancelled else { return }
-		details = await VideoDetailsCache.shared.details(for: video.id)
 	}
 }
 

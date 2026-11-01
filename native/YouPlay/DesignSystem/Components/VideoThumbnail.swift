@@ -1,24 +1,41 @@
 import SwiftUI
 
+/// A video's 16:9 image with its duration or live badge.
 struct VideoThumbnail: View {
-	let url: URL?
-	var fallbackURL: URL?
-	var badge: String?
+	let video: Video
+	var isCompact = false
+
+	@State private var details: VideoDetails?
 
 	var body: some View {
-		RemoteImage(url: url, fallbackURL: fallbackURL)
+		RemoteImage(url: video.largeThumbnailURL, fallbackURL: video.thumbnailURL)
 			.aspectRatio(16 / 9, contentMode: .fit)
-			.clipShape(.rect(cornerRadius: Radius.lg, style: .continuous))
+			.clipShape(.rect(cornerRadius: isCompact ? Radius.md : Radius.lg, style: .continuous))
 			.overlay(alignment: .bottomTrailing) {
 				if let badge {
 					Text(badge)
 						.font(Typography.badge)
 						.foregroundStyle(Palette.badgeText)
-						.padding(.horizontal, Spacing.sm)
-						.padding(.vertical, Spacing.xs)
+						.padding(.horizontal, isCompact ? Spacing.xs : Spacing.sm)
+						.padding(.vertical, isCompact ? Spacing.xxs : Spacing.xs)
 						.background(Palette.badgeBackground, in: .rect(cornerRadius: Radius.sm, style: .continuous))
-						.padding(Spacing.sm)
+						.padding(isCompact ? Spacing.xs : Spacing.sm)
 				}
 			}
+			.task(id: video.id) { await loadDetailsIfNeeded() }
+	}
+
+	private var badge: String? {
+		if details?.isLive == true { return "DAL VIVO" }
+		if let scheduledAt = details?.scheduledAt ?? video.scheduledAt { return Format.upcoming(scheduledAt) }
+		return video.duration ?? details?.duration
+	}
+
+	/// Waits a moment so that rows scrolled past quickly don't cause any request.
+	private func loadDetailsIfNeeded() async {
+		guard video.duration == nil, video.scheduledAt == nil else { return }
+		try? await Task.sleep(for: .milliseconds(150))
+		guard !Task.isCancelled else { return }
+		details = await VideoDetailsCache.shared.details(for: video.id)
 	}
 }

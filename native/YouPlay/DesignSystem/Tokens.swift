@@ -41,10 +41,13 @@ enum Spacing {
 
 enum Metrics {
 	static let moreMenuWidth: CGFloat = 32
+	static let compactThumbnailWidth: CGFloat = 112
 	static let avatar: CGFloat = 44
 	static let smallAvatar: CGFloat = 36
 	static let channelAvatar: CGFloat = 80
 	static let minimumTouchTarget: CGFloat = 44
+	/// Height of the navigation bar and of its buttons.
+	static let toolbarHeight: CGFloat = 44
 	static let videoControl: CGFloat = 30
 	static let disabledOpacity = 0.4
 	static let shadowRadius: CGFloat = 12

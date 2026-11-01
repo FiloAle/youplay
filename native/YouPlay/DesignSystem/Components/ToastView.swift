@@ -8,7 +8,7 @@ struct ToastView: View {
 			.font(Typography.rowTitle)
 			.foregroundStyle(Palette.textPrimary)
 			.padding(.horizontal, Spacing.lg)
-			.padding(.vertical, Spacing.md)
+			.frame(minHeight: Metrics.toolbarHeight)
 			.glassEffect(.regular, in: .capsule)
 	}
 }
