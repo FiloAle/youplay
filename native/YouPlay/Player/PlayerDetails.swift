@@ -55,12 +55,7 @@ struct PlayerDetails: View {
 					}
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
-				// As tall as the title's first line, so the menu centers on it without pushing the title down.
-				Text(verbatim: " ")
-					.font(Typography.title)
-					.hidden()
-					.frame(width: Metrics.minimumTouchTarget - Spacing.md)
-					.overlay { VideoOptionsMenu() }
+				VideoOptionsMenu()
 			}
 
 			description
@@ -158,13 +153,11 @@ private struct VideoOptionsMenu: View {
 	]
 
 	var body: some View {
-		Menu {
+		FirstLineMenu(font: Typography.title) {
 			Picker("Qualità", selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
 				ForEach(Self.qualities, id: \.height) { Text($0.label).tag($0.height) }
 			}
 			.pickerStyle(.inline)
-		} label: {
-			MoreMenuLabel()
 		}
 	}
 }

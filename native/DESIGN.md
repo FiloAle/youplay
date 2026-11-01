@@ -34,8 +34,10 @@ The closer two things are related, the closer they sit. Each level is visibly la
 | 2 pt | Lines of the same metadata | `xxs` |
 | 4 pt | A title and its metadata | `xs` |
 | 12 pt | A section title and its first row | `xs` + row inset |
-| 16 pt | Blocks of a header, adjacent rows, screen margins | `lg`, or `contentRow` twice |
-| 32 pt | Sections | `SectionTitle`, `xl` + row inset |
+| 8 pt | Parts of a video card | `sm` |
+| 16 pt | Blocks of a header, adjacent channel rows, screen margins | `lg`, or `contentRow` twice |
+| 24 pt | Adjacent video cards | `VideoRow`, `md` twice |
+| 32+ pt | Sections | `SectionTitle`, `xl` + row inset |
 
 Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`, so these gaps can't drift between screens. There are no separators: lists are held together by spacing.
 
@@ -46,12 +48,12 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 | `RemoteImage` | Cached, downsampled image that fills its frame |
 | `VideoThumbnail` | 16:9 image with duration or live badge |
 | `Avatar` | Round channel image |
-| `VideoRow` | Video in any list, with queue and channel actions |
+| `VideoRow` | Video in any list as a full-width card, with queue and channel actions |
 | `ChannelRow` | Channel in any list |
 | `SectionTitle` | Opens a group of rows, on every screen |
 | `screenTitle` | Large title of a main screen, with an optional gray detail on the same line |
 | `ExpandableText` | Long text in a box, collapsed to three lines |
-| `MoreMenuLabel` | The "…" that opens a menu of secondary actions |
+| `MoreMenuLabel`, `FirstLineMenu` | The "…" that opens a menu of secondary actions, alone or aligned to a title's first line |
 | `VideoControlButton` | Icon in a dark circle, readable on top of any video |
 | `ToastView` | Short confirmation over the content |
 | `CategoryMenu` | Picks a followed channel's category |

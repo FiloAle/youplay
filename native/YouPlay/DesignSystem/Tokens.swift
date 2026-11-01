@@ -22,10 +22,11 @@ enum Typography {
 	static let channelName = Font.title2.bold()
 	static let title = Font.title3.weight(.semibold)
 	static let sectionTitle = Font.headline
+	static let cardTitle = Font.callout.weight(.semibold)
 	static let rowTitle = Font.subheadline.weight(.semibold)
 	static let body = Font.subheadline
 	static let metadata = Font.footnote
-	static let badge = Font.caption2.weight(.semibold).monospacedDigit()
+	static let badge = Font.caption.weight(.semibold).monospacedDigit()
 	static let videoControl = Font.footnote.weight(.semibold)
 }
 
@@ -39,7 +40,7 @@ enum Spacing {
 }
 
 enum Metrics {
-	static let thumbnailWidth: CGFloat = 136
+	static let moreMenuWidth: CGFloat = 32
 	static let avatar: CGFloat = 44
 	static let smallAvatar: CGFloat = 36
 	static let channelAvatar: CGFloat = 80

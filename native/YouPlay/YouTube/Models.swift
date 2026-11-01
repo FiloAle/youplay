@@ -10,6 +10,11 @@ struct Video: Identifiable, Hashable, Codable, Sendable {
 	var views: String?
 	var publishedAt: Date?
 	var scheduledAt: Date?
+
+	/// 1280 pixels wide, which the feeds don't report. A few old videos don't have it.
+	var largeThumbnailURL: URL? {
+		URL(string: "https://i.ytimg.com/vi/\(id)/hq720.jpg")
+	}
 }
 
 /// Field names match the backup format of the Expo app, so existing data keeps working.

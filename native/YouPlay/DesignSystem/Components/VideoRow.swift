@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A video in any list: tap to play, "…" for the other actions, which long press also opens.
+/// A video in any list, as a full-width card: tap to play, "…" for the other actions, which long press also opens.
 struct VideoRow: View {
 	let video: Video
 	var showsChannel = true
@@ -14,50 +14,47 @@ struct VideoRow: View {
 	@State private var details: VideoDetails?
 
 	var body: some View {
-		HStack(spacing: Spacing.xs) {
-			Button {
-				if let action { action() } else { player.open(video) }
-			} label: {
-				HStack(alignment: .top, spacing: Spacing.md) {
-					VideoThumbnail(url: video.thumbnailURL, badge: badge)
-						.frame(width: Metrics.thumbnailWidth)
-					textColumn
-				}
-				.contentShape(.rect)
-			}
-			.buttonStyle(RowButtonStyle())
+		Button {
+			if let action { action() } else { player.open(video) }
+		} label: {
+			VStack(alignment: .leading, spacing: Spacing.sm) {
+				VideoThumbnail(url: video.largeThumbnailURL, fallbackURL: video.thumbnailURL, badge: badge)
 
-			Menu {
-				actions
-			} label: {
-				MoreMenuLabel()
+				HStack(alignment: .top, spacing: Spacing.xs) {
+					Text(video.title)
+						.font(Typography.cardTitle)
+						.foregroundStyle(Palette.textPrimary)
+						.lineLimit(2)
+						.multilineTextAlignment(.leading)
+						.frame(maxWidth: .infinity, alignment: .leading)
+					FirstLineMenu(font: Typography.cardTitle) { actions }
+				}
+
+				metadata
 			}
+			.contentShape(.rect)
 		}
+		.buttonStyle(RowButtonStyle())
 		.contextMenu(menuItems: { if onRemoveFromQueue == nil { actions } })
-		.contentRow()
+		.contentRow(top: Spacing.md, bottom: Spacing.md)
 		.task(id: video.id) { await loadDetailsIfNeeded() }
 	}
 
-	private var textColumn: some View {
-		VStack(alignment: .leading, spacing: Spacing.xs) {
-			Text(video.title)
-				.font(Typography.rowTitle)
-				.foregroundStyle(Palette.textPrimary)
-				.lineLimit(2)
-				.multilineTextAlignment(.leading)
-			VStack(alignment: .leading, spacing: Spacing.xxs) {
-				if showsChannel {
-					Text(video.channelName)
-				}
-				if let publishedAt = video.publishedAt {
-					Text(Format.relative(publishedAt))
-				}
+	/// Where the channel is already obvious, its name leaves the space to the views.
+	private var metadata: some View {
+		HStack(spacing: Spacing.sm) {
+			if let source = showsChannel ? video.channelName : video.views {
+				Text(source)
 			}
-			.font(Typography.metadata)
-			.foregroundStyle(Palette.textSecondary)
-			.lineLimit(1)
+			Spacer(minLength: 0)
+			if let publishedAt = video.publishedAt {
+				Text(Format.relative(publishedAt))
+					.fixedSize()
+			}
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
+		.font(Typography.metadata)
+		.foregroundStyle(Palette.textSecondary)
+		.lineLimit(1)
 	}
 
 	@ViewBuilder
