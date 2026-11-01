@@ -1,4 +1,4 @@
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerState } from "@/contexts/PlayerContext";
 import {
 	Button,
 	Host,
@@ -17,7 +17,7 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { Image } from "expo-image";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, {
 	Easing,
@@ -46,8 +46,9 @@ interface QueuePanelProps {
 const ANIMATION = { duration: 320, easing: Easing.out(Easing.cubic) };
 
 /** Covers the area below the video, expanding from (and collapsing into) the queue button. */
-export default function QueuePanel({ visible, origin, onClose }: QueuePanelProps) {
-	const { queue, removeFromQueue, openVideo } = usePlayer();
+function QueuePanel({ visible, origin, onClose }: QueuePanelProps) {
+	const { queue } = usePlayerState();
+	const { removeFromQueue, openVideo } = usePlayerActions();
 	const { width } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
 	const containerRef = useRef<View>(null);
@@ -168,6 +169,8 @@ export default function QueuePanel({ visible, origin, onClose }: QueuePanelProps
 		</View>
 	);
 }
+
+export default memo(QueuePanel);
 
 const styles = StyleSheet.create({
 	panel: {

@@ -1,10 +1,10 @@
 import EpisodeCard from "@/components/EpisodeCard";
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 import { useRelatedVideos } from "@/hooks/use-related-videos";
 import { VideoInfo } from "@/lib/youtube";
 import { Button, Host } from "@expo/ui/swift-ui";
 import { router } from "expo-router";
-import { useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DescriptionBox from "./DescriptionBox";
@@ -18,8 +18,25 @@ interface PlayerDetailsProps {
 	onOpenQueue: (origin: Rect) => void;
 }
 
-export default function PlayerDetails({ video, onOpenQueue }: PlayerDetailsProps) {
-	const { setExpanded } = usePlayer();
+/** Memoized so that loading details for one related video doesn't re-render the whole list. */
+const RelatedEpisode = memo(function RelatedEpisode({
+	video,
+	onOpenChannel,
+}: {
+	video: VideoInfo;
+	onOpenChannel: (channelId?: string) => void;
+}) {
+	return (
+		<EpisodeCard
+			video={video}
+			subtitle={video.channelName}
+			onSubtitlePress={() => onOpenChannel(video.channelId)}
+		/>
+	);
+});
+
+function PlayerDetails({ video, onOpenQueue }: PlayerDetailsProps) {
+	const { setExpanded } = usePlayerActions();
 	const { videos: related, category } = useRelatedVideos(video);
 	const listRef = useRef<FlatList<VideoInfo>>(null);
 	const insets = useSafeAreaInsets();
@@ -35,11 +52,19 @@ export default function PlayerDetails({ video, onOpenQueue }: PlayerDetailsProps
 		listRef.current?.scrollToOffset({ offset: 0, animated: false });
 	}, [video.videoId]);
 
-	const openChannel = (channelId?: string) => {
-		if (!channelId) return;
-		setExpanded(false);
-		router.push(`/home/channel/${channelId}`);
-	};
+	const openChannel = useCallback(
+		(channelId?: string) => {
+			if (!channelId) return;
+			setExpanded(false);
+			router.push(`/home/channel/${channelId}`);
+		},
+		[setExpanded],
+	);
+
+	const renderItem = useCallback(
+		({ item }: { item: VideoInfo }) => <RelatedEpisode video={item} onOpenChannel={openChannel} />,
+		[openChannel],
+	);
 
 	const meta = [video.channelName, video.viewCount, video.publishedDate].filter(Boolean).join(" • ");
 
@@ -80,18 +105,14 @@ export default function PlayerDetails({ video, onOpenQueue }: PlayerDetailsProps
 			data={related}
 			keyExtractor={(item) => item.videoId}
 			ListHeaderComponent={header}
-			renderItem={({ item }) => (
-				<EpisodeCard
-					video={item}
-					subtitle={item.channelName}
-					onSubtitlePress={() => openChannel(item.channelId)}
-				/>
-			)}
+			renderItem={renderItem}
 			contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
 			indicatorStyle="white"
 		/>
 	);
 }
+
+export default memo(PlayerDetails);
 
 const styles = StyleSheet.create({
 	content: {

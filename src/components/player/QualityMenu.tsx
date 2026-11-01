@@ -1,4 +1,4 @@
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayerActions, usePlayerState } from "@/contexts/PlayerContext";
 import { Menu, Picker, Text } from "@expo/ui/swift-ui";
 import { pickerStyle, tag } from "@expo/ui/swift-ui/modifiers";
 import { glassIconButton } from "./glass-icon-button";
@@ -13,7 +13,8 @@ const QUALITY_OPTIONS = [
 
 /** Must be rendered inside a SwiftUI `Host`. */
 export default function QualityMenu() {
-	const { maxQuality, setMaxQuality } = usePlayer();
+	const { maxQuality } = usePlayerState();
+	const { setMaxQuality } = usePlayerActions();
 
 	return (
 		<Menu label="Qualità" systemImage="slider.horizontal.3" modifiers={glassIconButton}>

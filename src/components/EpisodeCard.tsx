@@ -1,4 +1,4 @@
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 import { VideoInfo } from "@/lib/youtube";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -18,7 +18,7 @@ export default function EpisodeCard({
 	subtitle,
 	onSubtitlePress,
 }: EpisodeCardProps) {
-	const { openVideo, addToQueue } = usePlayer();
+	const { openVideo, addToQueue } = usePlayerActions();
 
 	return (
 		<Pressable

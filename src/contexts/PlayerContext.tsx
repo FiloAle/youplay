@@ -1,3 +1,4 @@
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { VideoInfo, youtubeService } from "@/lib/youtube";
 import { setAudioModeAsync } from "expo-audio";
 import { useVideoPlayer } from "expo-video";
@@ -8,28 +9,32 @@ import React, {
 	ReactNode,
 	useContext,
 	useEffect,
+	useMemo,
 	useState,
 } from "react";
 import { Alert } from "react-native";
 import ToastHUD from "@/components/ui/ToastHUD";
 
-interface PlayerContextType {
+interface PlayerState {
 	currentVideo: VideoInfo | null;
+	isLoading: boolean;
+	queue: VideoInfo[];
+	history: VideoInfo[];
+	maxQuality: number;
+}
+
+/** Every function here keeps the same identity across renders, so reading them never causes a re-render. */
+interface PlayerActions {
+	player: any;
 	playVideo: (video: VideoInfo, autoplay?: boolean) => Promise<void>;
 	pause: () => void;
 	resume: () => void;
 	seekTo: (time: number) => void;
-	isLoading: boolean;
-	player: any;
-	queue: VideoInfo[];
-	history: VideoInfo[];
 	addToQueue: (video: VideoInfo) => void;
 	removeFromQueue: (index: number) => void;
 	playNext: () => Promise<void>;
 	playPrevious: () => Promise<void>;
-	maxQuality: number;
 	setMaxQuality: (height: number) => void;
-	isExpanded: boolean;
 	setExpanded: (expanded: boolean) => void;
 	/** Plays the video and opens the full-page player. */
 	openVideo: (video: VideoInfo) => void;
@@ -37,7 +42,9 @@ interface PlayerContextType {
 
 const QUALITY_KEY = "player_max_quality";
 
-const PlayerContext = createContext<PlayerContextType | null>(null);
+const PlayerStateContext = createContext<PlayerState | null>(null);
+const PlayerActionsContext = createContext<PlayerActions | null>(null);
+const PlayerExpandedContext = createContext(false);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
@@ -73,11 +80,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		});
 	}, []);
 
-	const setMaxQuality = (height: number) => {
+	const setMaxQuality = useStableCallback((height: number) => {
 		setMaxQualityState(height);
 		player.maxVideoHeight = height;
 		AsyncStorage.setItem(QUALITY_KEY, height.toString());
-	};
+	});
 
 	const queueRef = React.useRef<VideoInfo[]>([]);
 	const playNextLock = React.useRef(false);
@@ -94,7 +101,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		}
 	}, [playbackRateEvent?.playbackRate]);
 
-	const playNext = async () => {
+	const playNext = useStableCallback(async () => {
 		if (playNextLock.current) return;
 		playNextLock.current = true;
 
@@ -111,7 +118,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		} finally {
 			playNextLock.current = false;
 		}
-	};
+	});
 
 	useEffect(() => {
 		const sub1 = player.addListener("statusChange", (payload) => {
@@ -139,7 +146,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		};
 	}, [player]);
 
-	const addToQueue = (video: VideoInfo) => {
+	const addToQueue = useStableCallback((video: VideoInfo) => {
 		if (!currentVideo) {
 			playVideo(video, false);
 			showToast("Aggiunto alla coda");
@@ -148,16 +155,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 			setQueue(queueRef.current);
 			showToast("Aggiunto alla coda");
 		}
-	};
+	});
 
-	const removeFromQueue = (index: number) => {
+	const removeFromQueue = useStableCallback((index: number) => {
 		const newQueue = [...queueRef.current];
 		newQueue.splice(index, 1);
 		queueRef.current = newQueue;
 		setQueue(newQueue);
-	};
+	});
 
-	const playVideo = async (video: VideoInfo, autoplay = true) => {
+	const playVideo = useStableCallback(async (video: VideoInfo, autoplay: boolean = true) => {
 		if (currentVideo && currentVideo.videoId !== video.videoId) {
 			setHistory((prev) => [...prev, currentVideo]);
 		}
@@ -214,31 +221,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		} finally {
 			setIsLoading(false);
 		}
-	};
+	});
 
 	const clearCurrentVideo = () => {
 		setCurrentVideo(null);
 		setExpanded(false);
 	};
 
-	const openVideo = (video: VideoInfo) => {
+	const openVideo = useStableCallback((video: VideoInfo) => {
 		setExpanded(true);
 		if (currentVideo?.videoId !== video.videoId) playVideo(video);
-	};
+	});
 
-	const pause = () => {
+	const pause = useStableCallback(() => {
 		player.pause();
-	};
+	});
 
-	const resume = () => {
+	const resume = useStableCallback(() => {
 		player.play();
-	};
+	});
 
-	const seekTo = (time: number) => {
+	const seekTo = useStableCallback((time: number) => {
 		player.currentTime = time;
-	};
+	});
 
-	const playPrevious = async () => {
+	const playPrevious = useStableCallback(async () => {
 		if (player.currentTime > 3 || history.length === 0) {
 			player.currentTime = 0;
 			return;
@@ -246,45 +253,63 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		const prev = history[history.length - 1];
 		setHistory((prevHistory) => prevHistory.slice(0, -1));
 		await playVideo(prev);
-	};
+	});
+
+	const actions = useMemo<PlayerActions>(
+		() => ({
+			player,
+			playVideo,
+			pause,
+			resume,
+			seekTo,
+			addToQueue,
+			removeFromQueue,
+			playNext,
+			playPrevious,
+			setMaxQuality,
+			setExpanded,
+			openVideo,
+		}),
+		[player],
+	);
+
+	const state = useMemo<PlayerState>(
+		() => ({ currentVideo, isLoading, queue, history, maxQuality }),
+		[currentVideo, isLoading, queue, history, maxQuality],
+	);
 
 	return (
-		<PlayerContext.Provider
-			value={{
-				currentVideo,
-				playVideo,
-				pause,
-				resume,
-				seekTo,
-				isLoading,
-				player,
-				queue,
-				history,
-				addToQueue,
-				removeFromQueue,
-				playNext,
-				playPrevious,
-				maxQuality,
-				setMaxQuality,
-				isExpanded,
-				setExpanded,
-				openVideo,
-			}}
-		>
-			{children}
-			<ToastHUD
-				visible={toastVisible}
-				message={toastMessage}
-				onHide={() => setToastVisible(false)}
-			/>
-		</PlayerContext.Provider>
+		<PlayerActionsContext.Provider value={actions}>
+			<PlayerStateContext.Provider value={state}>
+				<PlayerExpandedContext.Provider value={isExpanded}>
+					{children}
+					<ToastHUD
+						visible={toastVisible}
+						message={toastMessage}
+						onHide={() => setToastVisible(false)}
+					/>
+				</PlayerExpandedContext.Provider>
+			</PlayerStateContext.Provider>
+		</PlayerActionsContext.Provider>
 	);
 }
 
-export function usePlayer() {
-	const context = useContext(PlayerContext);
+export function usePlayerState() {
+	const context = useContext(PlayerStateContext);
 	if (!context) {
-		throw new Error("usePlayer must be used within a PlayerProvider");
+		throw new Error("usePlayerState must be used within a PlayerProvider");
 	}
 	return context;
+}
+
+export function usePlayerActions() {
+	const context = useContext(PlayerActionsContext);
+	if (!context) {
+		throw new Error("usePlayerActions must be used within a PlayerProvider");
+	}
+	return context;
+}
+
+export function usePlayerExpanded() {
+	return useContext(PlayerExpandedContext);
 }
