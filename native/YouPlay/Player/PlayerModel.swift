@@ -79,6 +79,12 @@ final class PlayerModel {
 		if wasPlaying { player.play() }
 	}
 
+	/// Stops everything and removes the player from the screen. The queue goes too, since it's only visible in the player.
+	func close() {
+		queue = []
+		reset()
+	}
+
 	// MARK: Queue
 
 	func enqueue(_ video: Video) {
@@ -93,6 +99,10 @@ final class PlayerModel {
 	func playFromQueue(_ video: Video) {
 		queue.removeAll { $0.id == video.id }
 		open(video)
+	}
+
+	func removeFromQueue(_ video: Video) {
+		queue.removeAll { $0.id == video.id }
 	}
 
 	func removeFromQueue(at offsets: IndexSet) {
@@ -148,7 +158,16 @@ final class PlayerModel {
 
 	private func fail(with message: String) {
 		errorMessage = message
+		reset()
+	}
+
+	private func reset() {
+		loadTask?.cancel()
+		itemObservation = nil
+		player.replaceCurrentItem(with: nil)
 		current = nil
+		description = nil
+		streamURL = nil
 		isExpanded = false
 		isLoading = false
 		nowPlaying?.clear()

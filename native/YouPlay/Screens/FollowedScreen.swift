@@ -20,15 +20,12 @@ struct FollowedScreen: View {
 
 		NavigationStack(path: $router.followedPath) {
 			List(sections) { section in
-				Section {
-					ForEach(section.channels) { row(for: $0) }
-				} header: {
-					if let title = section.title {
-						Text(title)
-					}
+				if let title = section.title {
+					SectionTitle(title: title)
 				}
+				ForEach(section.channels) { row(for: $0) }
 			}
-			.listStyle(.plain)
+			.contentList()
 			.miniPlayerInset(player)
 			.refreshable { await subscriptions.refresh() }
 			.overlay {
@@ -60,6 +57,7 @@ struct FollowedScreen: View {
 		NavigationLink(value: ChannelRoute(id: channel.id, name: channel.name)) {
 			ChannelRow(channel: channel)
 		}
+		.contentRow()
 		.swipeActions {
 			Button("Smetti di seguire", systemImage: "minus.circle", role: .destructive) {
 				subscriptions.toggleFollow(channel)

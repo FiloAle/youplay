@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// A video in any list: tap to play, "…" or long press for the other actions.
+/// A video in any list: tap to play, "…" for the other actions, which long press also opens.
 struct VideoRow: View {
 	let video: Video
 	var showsChannel = true
-	var showsActions = true
+	/// For a queued video. It replaces long press, which then drags the row to reorder it.
+	var onRemoveFromQueue: (() -> Void)?
 	/// Replaces the default action of opening the video.
 	var action: (() -> Void)?
 
@@ -26,19 +27,14 @@ struct VideoRow: View {
 			}
 			.buttonStyle(RowButtonStyle())
 
-			if showsActions {
-				Menu {
-					actions
-				} label: {
-					Image(systemName: "ellipsis")
-						.foregroundStyle(Palette.textSecondary)
-						.frame(width: Metrics.minimumTouchTarget - Spacing.md, height: Metrics.minimumTouchTarget)
-						.contentShape(.rect)
-				}
-				.accessibilityLabel("Altre azioni")
+			Menu {
+				actions
+			} label: {
+				MoreMenuLabel()
 			}
 		}
-		.contextMenu(menuItems: { if showsActions { actions } })
+		.contextMenu(menuItems: { if onRemoveFromQueue == nil { actions } })
+		.contentRow()
 		.task(id: video.id) { await loadDetailsIfNeeded() }
 	}
 
@@ -49,26 +45,29 @@ struct VideoRow: View {
 				.foregroundStyle(Palette.textPrimary)
 				.lineLimit(2)
 				.multilineTextAlignment(.leading)
-			if showsChannel {
-				Text(video.channelName)
-					.font(Typography.metadata)
-					.foregroundStyle(Palette.textSecondary)
-					.lineLimit(1)
+			VStack(alignment: .leading, spacing: Spacing.xxs) {
+				if showsChannel {
+					Text(video.channelName)
+				}
+				if let publishedAt = video.publishedAt {
+					Text(Format.relative(publishedAt))
+				}
 			}
-			if let publishedAt = video.publishedAt {
-				Text(Format.relative(publishedAt))
-					.font(Typography.metadata)
-					.foregroundStyle(Palette.textSecondary)
-					.lineLimit(1)
-			}
+			.font(Typography.metadata)
+			.foregroundStyle(Palette.textSecondary)
+			.lineLimit(1)
 		}
 		.frame(maxWidth: .infinity, alignment: .leading)
 	}
 
 	@ViewBuilder
 	private var actions: some View {
-		Button("Aggiungi alla coda", systemImage: "text.line.last.and.arrowtriangle.forward") {
-			player.enqueue(video)
+		if let onRemoveFromQueue {
+			Button("Rimuovi dalla coda", systemImage: "minus.circle", role: .destructive, action: onRemoveFromQueue)
+		} else {
+			Button("Aggiungi alla coda", systemImage: "text.line.last.and.arrowtriangle.forward") {
+				player.enqueue(video)
+			}
 		}
 		if showsChannel {
 			Button("Vai al canale", systemImage: "person.crop.circle") {

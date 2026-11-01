@@ -3,7 +3,8 @@ import SwiftUI
 /// Long text in a box, collapsed to a few lines. The toggle only shows when something is cut off.
 struct ExpandableText: View {
 	let text: String
-	var collapsedLines = 3
+
+	static let collapsedLines = 3
 
 	@State private var isExpanded = false
 	@State private var fullHeight: CGFloat = 0
@@ -12,7 +13,7 @@ struct ExpandableText: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: Spacing.sm) {
 			Text(text)
-				.lineLimit(isExpanded ? nil : collapsedLines)
+				.lineLimit(isExpanded ? nil : Self.collapsedLines)
 				.foregroundStyle(Palette.textSecondary)
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.onGeometryChange(for: CGFloat.self, of: \.size.height) { height in

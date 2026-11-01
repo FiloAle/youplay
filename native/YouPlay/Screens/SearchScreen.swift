@@ -19,13 +19,16 @@ struct SearchScreen: View {
 				NavigationLink(value: ChannelRoute(id: channel.id, name: channel.name)) {
 					ChannelRow(channel: channel)
 				}
+				.contentRow()
 			}
-			.listStyle(.plain)
+			.contentList()
 			.miniPlayerInset(player)
 			.overlay { emptyState }
 			.navigationTitle("Cerca")
 			.channelNavigation()
 			.searchable(text: $query, prompt: "Canali")
+			// Keeps the screen's title on screen while searching.
+			.searchPresentationToolbarBehavior(.avoidHidingContent)
 			.task(id: query) { await search() }
 		}
 	}

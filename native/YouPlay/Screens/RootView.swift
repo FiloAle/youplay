@@ -28,7 +28,7 @@ struct RootView: View {
 
 			if let toast = player.toast {
 				ToastView(message: toast)
-					.padding(.bottom, tabBarInset + PlayerGeometry.miniHeight + Spacing.lg)
+					.padding(.bottom, tabBarInset + PlayerGeometry.miniVideoHeight + Spacing.lg)
 					.transition(.opacity.combined(with: .scale(scale: 0.9)))
 					.allowsHitTesting(false)
 			}
@@ -48,6 +48,6 @@ struct RootView: View {
 extension View {
 	/// Keeps the end of a list visible above the mini player.
 	func miniPlayerInset(_ player: PlayerModel) -> some View {
-		contentMargins(.bottom, player.current == nil ? 0 : PlayerGeometry.miniHeight + Spacing.md, for: .scrollContent)
+		contentMargins(.bottom, player.current == nil ? 0 : PlayerGeometry.miniVideoHeight + Spacing.md, for: .scrollContent)
 	}
 }

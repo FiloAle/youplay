@@ -7,23 +7,23 @@ struct ChannelScreen: View {
 	@Environment(SubscriptionStore.self) private var subscriptions
 	@State private var page = ChannelPageModel()
 	@State private var newCategoryChannelID: String?
+	@State private var isTitleVisible = false
 
 	var body: some View {
 		List {
-			Section {
-				header
-				ForEach(page.videos) { video in
-					VideoRow(video: video, showsChannel: false)
-						.onAppear { if video.id == page.videos.last?.id { page.loadMore() } }
-				}
-				if page.isLoading {
-					ProgressView()
-						.frame(maxWidth: .infinity)
-				}
+			header
+				.contentRow(bottom: Spacing.lg)
+			ForEach(page.videos) { video in
+				VideoRow(video: video, showsChannel: false)
+					.onAppear { if video.id == page.videos.last?.id { page.loadMore() } }
 			}
-			.listRowSeparator(.hidden)
+			if page.isLoading && channel != nil {
+				ProgressView()
+					.frame(maxWidth: .infinity)
+					.contentRow(top: Spacing.lg, bottom: Spacing.lg)
+			}
 		}
-		.listStyle(.plain)
+		.contentList()
 		.miniPlayerInset(player)
 		.overlay {
 			if let errorMessage = page.errorMessage, page.videos.isEmpty {
@@ -34,10 +34,25 @@ struct ChannelScreen: View {
 				} actions: {
 					Button("Riprova") { Task { await page.load(id: route.id) } }
 				}
+			} else if page.isLoading && channel == nil {
+				ProgressView()
 			}
 		}
-		.navigationTitle(channel?.name ?? route.name ?? "")
+		// The header already shows the name: the bar only takes over once it has scrolled away.
+		.onScrollGeometryChange(for: Bool.self) { geometry in
+			geometry.contentOffset.y + geometry.contentInsets.top > Metrics.channelAvatar
+		} action: { _, isScrolledPast in
+			withAnimation(Motion.standard) { isTitleVisible = isScrolledPast }
+		}
 		.navigationBarTitleDisplayMode(.inline)
+		.toolbar {
+			ToolbarItem(placement: .principal) {
+				Text(channel?.name ?? route.name ?? "")
+					.font(Typography.sectionTitle)
+					.foregroundStyle(Palette.textPrimary)
+					.opacity(isTitleVisible ? 1 : 0)
+			}
+		}
 		.newCategoryAlert(channelID: $newCategoryChannelID)
 		.task { await page.load(id: route.id) }
 	}
@@ -50,17 +65,18 @@ struct ChannelScreen: View {
 	@ViewBuilder
 	private var header: some View {
 		if let channel {
-			VStack(spacing: Spacing.lg) {
-				VStack(spacing: Spacing.sm) {
+			VStack(alignment: .leading, spacing: Spacing.lg) {
+				HStack(spacing: Spacing.lg) {
 					Avatar(url: channel.avatarURL, size: Metrics.channelAvatar)
-					Text(channel.name)
-						.font(Typography.channelName)
-						.foregroundStyle(Palette.textPrimary)
-						.multilineTextAlignment(.center)
-					if let subscribers = channel.subscribers, !subscribers.isEmpty {
-						Text(subscribers)
-							.font(Typography.metadata)
-							.foregroundStyle(Palette.textSecondary)
+					VStack(alignment: .leading, spacing: Spacing.xs) {
+						Text(channel.name)
+							.font(Typography.channelName)
+							.foregroundStyle(Palette.textPrimary)
+						if let subscribers = channel.subscribers, !subscribers.isEmpty {
+							Text(subscribers)
+								.font(Typography.metadata)
+								.foregroundStyle(Palette.textSecondary)
+						}
 					}
 				}
 				followControl(for: channel)
@@ -68,8 +84,6 @@ struct ChannelScreen: View {
 					ExpandableText(text: description)
 				}
 			}
-			.frame(maxWidth: .infinity)
-			.padding(.bottom, Spacing.sm)
 		}
 	}
 
@@ -87,12 +101,15 @@ struct ChannelScreen: View {
 					Text(followed.category ?? "Seguito")
 				}
 				.font(Typography.rowTitle)
+				.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.bordered)
 			.buttonBorderShape(.capsule)
 		} else {
 			Button { subscriptions.toggleFollow(channel) } label: {
-				Text("Segui").font(Typography.rowTitle)
+				Text("Segui")
+					.font(Typography.rowTitle)
+					.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.borderedProminent)
 			.buttonBorderShape(.capsule)

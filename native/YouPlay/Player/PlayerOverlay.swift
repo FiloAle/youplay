@@ -58,11 +58,13 @@ struct PlayerOverlay: View {
 				.gesture(pan(geometry))
 				.allowsHitTesting(player.isExpanded)
 
-			MiniPlayerBar(video: video)
-				.frame(width: geometry.size.width - PlayerGeometry.miniMargin * 2, height: PlayerGeometry.miniHeight)
-				.gesture(pan(geometry))
+			// Its own layer, because a shadow on the video would be redrawn on every frame of the transition.
+			RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+				.fill(Palette.videoBackground)
+				.shadow(color: Palette.shadow, radius: Metrics.shadowRadius, y: Spacing.xs)
+				.frame(width: PlayerGeometry.miniVideoWidth, height: PlayerGeometry.miniVideoHeight)
 				.modifier(PlayerMiniEffect(progress: progress, geometry: geometry))
-				.allowsHitTesting(!player.isExpanded)
+				.allowsHitTesting(false)
 
 			PlayerSurface(player: player.player, isExpanded: isSettledExpanded)
 				.overlay {
@@ -75,6 +77,12 @@ struct PlayerOverlay: View {
 				.frame(width: geometry.size.width, height: geometry.videoHeight)
 				.gesture(pan(geometry))
 				.modifier(PlayerVideoEffect(progress: progress, geometry: geometry, presented: presented))
+
+			MiniPlayerControls()
+				.frame(width: PlayerGeometry.miniVideoWidth, height: PlayerGeometry.miniVideoHeight)
+				.gesture(pan(geometry))
+				.modifier(PlayerMiniEffect(progress: progress, geometry: geometry))
+				.allowsHitTesting(!player.isExpanded)
 		}
 	}
 

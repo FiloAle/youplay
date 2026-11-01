@@ -8,67 +8,93 @@ struct PlayerDetails: View {
 	@Environment(SubscriptionStore.self) private var subscriptions
 	@Environment(AppRouter.self) private var router
 	@State private var related: [Video] = []
-	@State private var isShowingQueue = false
+	@State private var fetchedChannel: Channel?
 
 	private static let maxRelatedVideos = 30
 
 	var body: some View {
 		List {
-			Section {
-				header
-				if !related.isEmpty {
-					Text(relatedTitle)
-						.font(Typography.sectionTitle)
-						.foregroundStyle(Palette.textPrimary)
+			header
+				.contentRow(top: Spacing.lg)
+
+			if !player.queue.isEmpty {
+				SectionTitle(title: "In coda")
+				ForEach(player.queue) { queued in
+					VideoRow(video: queued, onRemoveFromQueue: { player.removeFromQueue(queued) }) {
+						player.playFromQueue(queued)
+					}
 				}
-				ForEach(related) { VideoRow(video: $0) }
+				.onDelete(perform: player.removeFromQueue)
+				.onMove(perform: player.moveInQueue)
 			}
-			.listRowSeparator(.hidden)
+
+			if !unqueuedRelated.isEmpty {
+				SectionTitle(title: "Altro da \(relatedCategory ?? video.channelName)")
+				// Within a single channel, repeating its name on every row adds nothing.
+				ForEach(unqueuedRelated) { VideoRow(video: $0, showsChannel: relatedCategory != nil) }
+			}
 		}
-		.listStyle(.plain)
-		.scrollContentBackground(.hidden)
-		.background(Palette.background)
+		.contentList()
+		.contentMargins(.bottom, Spacing.xl, for: .scrollContent)
 		.id(video.id)
-		.sheet(isPresented: $isShowingQueue) { QueueSheet() }
+		.task(id: video.channelID) { await loadChannel() }
 		.task(id: RelatedKey(videoID: video.id, channelIDs: relatedChannelIDs)) { await loadRelated() }
 	}
 
 	private var header: some View {
-		VStack(alignment: .leading, spacing: Spacing.md) {
-			VStack(alignment: .leading, spacing: Spacing.xs) {
-				Text(video.title)
+		VStack(alignment: .leading, spacing: Spacing.lg) {
+			HStack(alignment: .top, spacing: Spacing.xs) {
+				VStack(alignment: .leading, spacing: Spacing.xs) {
+					Text(video.title)
+						.font(Typography.title)
+						.foregroundStyle(Palette.textPrimary)
+					if let metadata {
+						Text(metadata)
+							.font(Typography.metadata)
+							.foregroundStyle(Palette.textSecondary)
+					}
+				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+				// As tall as the title's first line, so the menu centers on it without pushing the title down.
+				Text(verbatim: " ")
 					.font(Typography.title)
-					.foregroundStyle(Palette.textPrimary)
-				if let metadata {
-					Text(metadata)
+					.hidden()
+					.frame(width: Metrics.minimumTouchTarget - Spacing.md)
+					.overlay { VideoOptionsMenu() }
+			}
+
+			description
+
+			Button {
+				router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
+			} label: {
+				HStack(spacing: Spacing.sm) {
+					ChannelRow(channel: channel, avatarSize: Metrics.smallAvatar)
+						.frame(maxWidth: .infinity, alignment: .leading)
+					Image(systemName: "chevron.right")
 						.font(Typography.metadata)
 						.foregroundStyle(Palette.textSecondary)
 				}
+				.contentShape(.rect)
 			}
+			.buttonStyle(RowButtonStyle())
+		}
+	}
 
-			HStack(spacing: Spacing.sm) {
-				Button {
-					router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
-				} label: {
-					Text(video.channelName)
-						.font(Typography.rowTitle)
-						.foregroundStyle(Palette.textPrimary)
-						.lineLimit(1)
-						.frame(maxWidth: .infinity, alignment: .leading)
-						.contentShape(.rect)
-				}
-				.buttonStyle(RowButtonStyle())
-
-				QualityMenu()
-				Button { isShowingQueue = true } label: {
-					CircleIcon(systemName: "list.bullet", label: "Coda")
-				}
-				.buttonStyle(RowButtonStyle())
-			}
-
-			if let description = player.description, !description.isEmpty {
+	/// While loading it keeps the box's space, so that the rows below don't jump when the text arrives.
+	@ViewBuilder
+	private var description: some View {
+		if let description = player.description {
+			if !description.isEmpty {
 				ExpandableText(text: description)
 			}
+		} else {
+			Text(verbatim: "")
+				.font(Typography.body)
+				.lineLimit(ExpandableText.collapsedLines, reservesSpace: true)
+				.frame(maxWidth: .infinity)
+				.padding(Spacing.md)
+				.background(Palette.surface, in: .rect(cornerRadius: Radius.lg, style: .continuous))
 		}
 	}
 
@@ -77,17 +103,32 @@ struct PlayerDetails: View {
 		return parts.isEmpty ? nil : parts.joined(separator: " • ")
 	}
 
-	private var relatedCategory: String? {
-		subscriptions.channel(id: video.channelID)?.category
+	/// What's known right away is shown first, then the data fetched from YouTube takes over.
+	private var channel: Channel {
+		subscriptions.channel(id: video.channelID)
+			?? fetchedChannel.flatMap { $0.id == video.channelID ? $0 : nil }
+			?? Channel(id: video.channelID, name: video.channelName)
 	}
 
-	private var relatedTitle: String {
-		"Altro da \(relatedCategory ?? video.channelName)"
+	private var unqueuedRelated: [Video] {
+		let queued = Set(player.queue.map(\.id))
+		return related.filter { !queued.contains($0.id) }
+	}
+
+	private var relatedCategory: String? {
+		subscriptions.channel(id: video.channelID)?.category
 	}
 
 	private var relatedChannelIDs: [String] {
 		guard let relatedCategory else { return [video.channelID] }
 		return subscriptions.channels.filter { $0.category == relatedCategory }.map(\.id)
+	}
+
+	private func loadChannel() async {
+		if let followed = subscriptions.channel(id: video.channelID), followed.avatarURL != nil { return }
+		if let channel = try? await InnerTubeClient.shared.channel(id: video.channelID), !Task.isCancelled {
+			fetchedChannel = channel
+		}
 	}
 
 	private func loadRelated() async {
@@ -104,10 +145,11 @@ private struct RelatedKey: Hashable {
 	let channelIDs: [String]
 }
 
-private struct QualityMenu: View {
+/// Playback options, which iOS doesn't allow adding to the player's own menu.
+private struct VideoOptionsMenu: View {
 	@Environment(PlayerModel.self) private var player
 
-	private static let options = [
+	private static let qualities = [
 		(height: 0, label: "Automatica"),
 		(height: 1080, label: "1080p"),
 		(height: 720, label: "720p"),
@@ -117,12 +159,12 @@ private struct QualityMenu: View {
 
 	var body: some View {
 		Menu {
-			Picker("Qualità massima", selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
-				ForEach(Self.options, id: \.height) { Text($0.label).tag($0.height) }
+			Picker("Qualità", selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
+				ForEach(Self.qualities, id: \.height) { Text($0.label).tag($0.height) }
 			}
 			.pickerStyle(.inline)
 		} label: {
-			CircleIcon(systemName: "slider.horizontal.3", label: "Qualità")
+			MoreMenuLabel()
 		}
 	}
 }

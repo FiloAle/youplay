@@ -13,6 +13,7 @@ enum Palette {
 	static let videoBackground = Color.black
 	static let badgeBackground = Color.black.opacity(0.7)
 	static let badgeText = Color.white
+	static let shadow = Color.black.opacity(0.3)
 }
 
 enum Typography {
@@ -23,29 +24,33 @@ enum Typography {
 	static let body = Font.subheadline
 	static let metadata = Font.footnote
 	static let badge = Font.caption2.weight(.semibold).monospacedDigit()
-	static let icon = Font.title3
+	static let videoControl = Font.footnote.weight(.semibold)
 }
 
 enum Spacing {
+	static let xxs: CGFloat = 2
 	static let xs: CGFloat = 4
 	static let sm: CGFloat = 8
 	static let md: CGFloat = 12
 	static let lg: CGFloat = 16
+	static let xl: CGFloat = 24
 }
 
 enum Metrics {
 	static let thumbnailWidth: CGFloat = 136
 	static let avatar: CGFloat = 44
-	static let channelAvatar: CGFloat = 96
+	static let smallAvatar: CGFloat = 36
+	static let channelAvatar: CGFloat = 80
 	static let minimumTouchTarget: CGFloat = 44
-	static let circleIcon: CGFloat = 36
+	static let videoControl: CGFloat = 30
+	static let disabledOpacity = 0.4
+	static let shadowRadius: CGFloat = 12
 }
 
 enum Radius {
 	static let sm: CGFloat = 6
 	static let md: CGFloat = 10
 	static let lg: CGFloat = 14
-	static let xl: CGFloat = 22
 }
 
 enum Motion {

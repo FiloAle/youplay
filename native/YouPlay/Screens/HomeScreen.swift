@@ -12,11 +12,8 @@ struct HomeScreen: View {
 		@Bindable var router = router
 
 		NavigationStack(path: $router.homePath) {
-			List(videos) { video in
-				VideoRow(video: video)
-					.listRowSeparator(.hidden)
-			}
-			.listStyle(.plain)
+			List(videos) { VideoRow(video: $0) }
+			.contentList()
 			.miniPlayerInset(player)
 			.refreshable { await feed.load(channelIDs: subscriptions.channels.map(\.id)) }
 			.overlay { emptyState }

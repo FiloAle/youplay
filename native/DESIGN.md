@@ -15,14 +15,29 @@ Goal: clean, clear, modern, minimal. It should feel like an app made by Apple.
 
 | Token | Use | System color |
 |---|---|---|
-| `accent` | Tint, one per screen at most | `systemRed` (the current YouPlay red) |
+| `accent` | App tint: icons in toolbars and menus, buttons, selected tab | `systemRed` (the current YouPlay red) |
 | `background` | Screens, expanded player | `systemBackground` |
 | `surface` | Boxes on top of the background | `secondarySystemBackground` |
 | `placeholder` | Images still loading | `tertiarySystemFill` |
 | `textPrimary` | Titles, main text | `label` |
 | `textSecondary` | Metadata, descriptions | `secondaryLabel` |
 | `videoBackground` | Behind video, in both themes | black |
-| `badgeBackground`, `badgeText` | Text on top of a thumbnail, in both themes | black 70%, white |
+| `badgeBackground`, `badgeText` | Text and icons on top of images and video, in both themes | black 70%, white |
+| `shadow` | Under the floating mini player | black 30% |
+
+## Spacing rhythm
+
+The closer two things are related, the closer they sit. Each level is visibly larger than the one below it.
+
+| Gap | Between | Token |
+|---|---|---|
+| 2 pt | Lines of the same metadata | `xxs` |
+| 4 pt | A title and its metadata | `xs` |
+| 12 pt | A section title and its first row | `xs` + row inset |
+| 16 pt | Blocks of a header, adjacent rows, screen margins | `lg`, or `contentRow` twice |
+| 32 pt | Sections | `SectionTitle`, `xl` + row inset |
+
+Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`, so these gaps can't drift between screens. There are no separators: lists are held together by spacing.
 
 ## Components
 
@@ -33,9 +48,10 @@ Goal: clean, clear, modern, minimal. It should feel like an app made by Apple.
 | `Avatar` | Round channel image |
 | `VideoRow` | Video in any list, with queue and channel actions |
 | `ChannelRow` | Channel in any list |
+| `SectionTitle` | Opens a group of rows, on every screen |
 | `ExpandableText` | Long text in a box, collapsed to three lines |
-| `IconButton` | Bare icon action with a 44 pt touch target |
-| `CircleIcon` | Icon in a neutral circle, as a label for a `Button` or `Menu` |
+| `MoreMenuLabel` | The "…" that opens a menu of secondary actions |
+| `VideoControlButton` | Icon in a dark circle, readable on top of any video |
 | `ToastView` | Short confirmation over the content |
 | `CategoryMenu` | Picks a followed channel's category |
 

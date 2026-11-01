@@ -14,7 +14,7 @@ struct VideoThumbnail: View {
 						.font(Typography.badge)
 						.foregroundStyle(Palette.badgeText)
 						.padding(.horizontal, Spacing.xs)
-						.padding(.vertical, 2)
+						.padding(.vertical, Spacing.xxs)
 						.background(Palette.badgeBackground, in: .rect(cornerRadius: Radius.sm, style: .continuous))
 						.padding(Spacing.xs)
 				}

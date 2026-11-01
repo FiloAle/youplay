@@ -11,6 +11,7 @@ struct PlayerSurface: UIViewControllerRepresentable {
 		controller.player = player
 		controller.delegate = context.coordinator
 		controller.updatesNowPlayingInfoCenter = false
+		controller.allowsVideoFrameAnalysis = false
 		controller.view.backgroundColor = UIColor(Palette.videoBackground)
 		update(controller)
 		return controller

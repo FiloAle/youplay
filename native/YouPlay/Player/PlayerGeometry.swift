@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Where every player layer sits, as a function of `progress`: 0 is full page, 1 is mini player.
 struct PlayerGeometry {
-	static let miniHeight: CGFloat = 64
-	static let miniMargin: CGFloat = Spacing.sm
-	static let miniVideoWidth: CGFloat = 100
+	static let miniMargin = Spacing.lg
+	static let miniVideoWidth: CGFloat = 192
+	static let miniVideoHeight = miniVideoWidth * 9 / 16
 
 	let size: CGSize
 	let safeTop: CGFloat
@@ -12,10 +12,21 @@ struct PlayerGeometry {
 	let miniBottom: CGFloat
 
 	var videoHeight: CGFloat { size.width * 9 / 16 }
-	var miniTop: CGFloat { size.height - miniBottom - Self.miniHeight }
+	var miniTop: CGFloat { size.height - miniBottom - Self.miniVideoHeight }
+	var miniLeft: CGFloat { size.width - Self.miniMargin - Self.miniVideoWidth }
 	var miniVideoScale: CGFloat { Self.miniVideoWidth / size.width }
-	var miniVideoHeight: CGFloat { Self.miniVideoWidth * 9 / 16 }
 	var detailsTop: CGFloat { safeTop + videoHeight }
+
+	func videoScale(at progress: CGFloat) -> CGFloat {
+		interpolate(progress, from: 1, to: miniVideoScale)
+	}
+
+	func videoOrigin(at progress: CGFloat) -> CGPoint {
+		CGPoint(
+			x: interpolate(progress, from: 0, to: miniLeft),
+			y: interpolate(progress, from: safeTop, to: miniTop)
+		)
+	}
 }
 
 /// Linear from `from` to `to` while `progress` goes through `range`, clamped outside of it.
@@ -43,20 +54,13 @@ struct PlayerVideoEffect: ViewModifier, Animatable {
 
 	func body(content: Content) -> some View {
 		presented.value = progress
-		let scale = interpolate(progress, from: 1, to: geometry.miniVideoScale)
+		let origin = geometry.videoOrigin(at: progress)
 		// The corners get scaled along with the video, so the radius is set at full size.
-		let radius = interpolate(progress, from: 0, to: Radius.md / geometry.miniVideoScale)
+		let radius = interpolate(progress, from: 0, to: Radius.lg / geometry.miniVideoScale)
 		return content
 			.clipShape(.rect(cornerRadius: radius, style: .continuous))
-			.scaleEffect(scale, anchor: .topLeading)
-			.offset(
-				x: interpolate(progress, from: 0, to: PlayerGeometry.miniMargin + Spacing.xs),
-				y: interpolate(
-					progress,
-					from: geometry.safeTop,
-					to: geometry.miniTop + (PlayerGeometry.miniHeight - geometry.miniVideoHeight) / 2
-				)
-			)
+			.scaleEffect(geometry.videoScale(at: progress), anchor: .topLeading)
+			.offset(x: origin.x, y: origin.y)
 	}
 }
 
@@ -70,15 +74,17 @@ struct PlayerBackdropEffect: ViewModifier, Animatable {
 	}
 
 	func body(content: Content) -> some View {
-		let width = geometry.size.width
-		return content
+		content
 			.scaleEffect(
-				x: interpolate(progress, from: 1, to: (width - PlayerGeometry.miniMargin * 2) / width),
-				y: interpolate(progress, from: 1, to: PlayerGeometry.miniHeight / geometry.size.height),
-				anchor: .top
+				x: geometry.videoScale(at: progress),
+				y: interpolate(progress, from: 1, to: PlayerGeometry.miniVideoHeight / geometry.size.height),
+				anchor: .topLeading
 			)
-			.offset(y: interpolate(progress, from: 0, to: geometry.miniTop))
-			.opacity(interpolate(progress, in: 0.85...1, from: 1, to: 0))
+			.offset(
+				x: interpolate(progress, from: 0, to: geometry.miniLeft),
+				y: interpolate(progress, from: 0, to: geometry.miniTop)
+			)
+			.opacity(interpolate(progress, in: 0.75...0.98, from: 1, to: 0))
 	}
 }
 
@@ -98,6 +104,7 @@ struct PlayerDetailsEffect: ViewModifier, Animatable {
 	}
 }
 
+/// Mini player layers: they follow the video exactly, and appear as it gets to its final size.
 struct PlayerMiniEffect: ViewModifier, Animatable {
 	var progress: CGFloat
 	let geometry: PlayerGeometry
@@ -108,11 +115,10 @@ struct PlayerMiniEffect: ViewModifier, Animatable {
 	}
 
 	func body(content: Content) -> some View {
-		content
+		let origin = geometry.videoOrigin(at: progress)
+		return content
 			.opacity(interpolate(progress, in: 0.7...1, from: 0, to: 1))
-			.offset(
-				x: PlayerGeometry.miniMargin,
-				y: geometry.miniTop + interpolate(progress, in: 0.7...1, from: -0.3 * geometry.miniTop, to: 0)
-			)
+			.scaleEffect(geometry.videoScale(at: progress) / geometry.miniVideoScale, anchor: .topLeading)
+			.offset(x: origin.x, y: origin.y)
 	}
 }
