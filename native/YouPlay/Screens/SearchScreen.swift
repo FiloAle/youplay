@@ -24,7 +24,7 @@ struct SearchScreen: View {
 			.contentList()
 			.miniPlayerInset(player)
 			.overlay { emptyState }
-			.navigationTitle("Cerca")
+			.screenTitle("Cerca")
 			.channelNavigation()
 			.searchable(text: $query, prompt: "Canali")
 			// Keeps the screen's title on screen while searching.

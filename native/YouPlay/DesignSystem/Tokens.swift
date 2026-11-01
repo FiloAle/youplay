@@ -17,6 +17,8 @@ enum Palette {
 }
 
 enum Typography {
+	static let screenTitle = Font.largeTitle.bold()
+	static let screenTitleDetail = Font.largeTitle
 	static let channelName = Font.title2.bold()
 	static let title = Font.title3.weight(.semibold)
 	static let sectionTitle = Font.headline

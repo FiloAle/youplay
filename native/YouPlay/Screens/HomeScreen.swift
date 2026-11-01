@@ -17,12 +17,14 @@ struct HomeScreen: View {
 			.miniPlayerInset(player)
 			.refreshable { await feed.load(channelIDs: subscriptions.channels.map(\.id)) }
 			.overlay { emptyState }
-			.navigationTitle("Home")
-			.navigationSubtitle(category ?? "")
+			.screenTitle("Home", detail: category)
 			.toolbar { filterMenu }
 			.channelNavigation()
-			.sheet(isPresented: $isManagingCategories) { ManageCategoriesSheet() }
 		}
+		// A category starts from the top with the title expanded, which only a new stack can do:
+		// the system has no way to expand a large title that has collapsed.
+		.id(category)
+		.sheet(isPresented: $isManagingCategories) { ManageCategoriesSheet() }
 		.task(id: subscriptions.channels.map(\.id)) {
 			await feed.load(channelIDs: subscriptions.channels.map(\.id))
 		}

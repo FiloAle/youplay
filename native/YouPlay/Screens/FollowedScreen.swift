@@ -37,7 +37,7 @@ struct FollowedScreen: View {
 					)
 				}
 			}
-			.navigationTitle("Seguiti")
+			.screenTitle("Seguiti")
 			.toolbar { actionsMenu }
 			.channelNavigation()
 			.newCategoryAlert(channelID: $newCategoryChannelID)

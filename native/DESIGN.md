@@ -49,6 +49,7 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 | `VideoRow` | Video in any list, with queue and channel actions |
 | `ChannelRow` | Channel in any list |
 | `SectionTitle` | Opens a group of rows, on every screen |
+| `screenTitle` | Large title of a main screen, with an optional gray detail on the same line |
 | `ExpandableText` | Long text in a box, collapsed to three lines |
 | `MoreMenuLabel` | The "…" that opens a menu of secondary actions |
 | `VideoControlButton` | Icon in a dark circle, readable on top of any video |
