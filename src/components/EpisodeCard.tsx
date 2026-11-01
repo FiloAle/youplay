@@ -18,10 +18,13 @@ export default function EpisodeCard({
 	subtitle,
 	onSubtitlePress,
 }: EpisodeCardProps) {
-	const { playVideo, addToQueue } = usePlayer();
+	const { openVideo, addToQueue } = usePlayer();
 
 	return (
-		<View style={styles.container}>
+		<Pressable
+			style={({ pressed }) => [styles.container, pressed && styles.pressed]}
+			onPress={() => openVideo(video)}
+		>
 			<View style={styles.topRow}>
 				<Image
 					source={{ uri: video.thumbnailUrl }}
@@ -44,10 +47,10 @@ export default function EpisodeCard({
 			</View>
 			<View style={styles.actions}>
 				<View style={styles.playAndDateContainer}>
-					<Pressable style={styles.playButton} onPress={() => playVideo(video)}>
+					<View style={styles.playButton}>
 						<Ionicons name="play" size={14} color="#FF383C" />
 						<Text style={styles.playButtonText}>{video.duration}</Text>
-					</Pressable>
+					</View>
 					<Text style={styles.dateInline}>{video.publishedDate}</Text>
 				</View>
 				<Pressable style={styles.queueButton} onPress={() => addToQueue(video)}>
@@ -58,7 +61,7 @@ export default function EpisodeCard({
 					/>
 				</Pressable>
 			</View>
-		</View>
+		</Pressable>
 	);
 }
 
@@ -68,6 +71,9 @@ const styles = StyleSheet.create({
 		paddingBottom: 16,
 		borderBottomWidth: StyleSheet.hairlineWidth,
 		borderBottomColor: "#333",
+	},
+	pressed: {
+		opacity: 0.6,
 	},
 	topRow: {
 		flexDirection: "row",

@@ -29,6 +29,10 @@ interface PlayerContextType {
 	playPrevious: () => Promise<void>;
 	maxQuality: number;
 	setMaxQuality: (height: number) => void;
+	isExpanded: boolean;
+	setExpanded: (expanded: boolean) => void;
+	/** Plays the video and opens the full-page player. */
+	openVideo: (video: VideoInfo) => void;
 }
 
 const QUALITY_KEY = "player_max_quality";
@@ -43,6 +47,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 	const [toastVisible, setToastVisible] = useState(false);
 	const [toastMessage, setToastMessage] = useState("");
 	const [maxQuality, setMaxQualityState] = useState(0);
+	const [isExpanded, setExpanded] = useState(false);
 
 	const showToast = (message: string) => {
 		setToastMessage(message);
@@ -115,7 +120,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 					"Errore Riproduzione",
 					"Il player nativo ha rifiutato lo stream video.",
 				);
-				setCurrentVideo(null);
+				clearCurrentVideo();
 			} else if (payload.status === "readyToPlay") {
 				if (autoplayPendingRef.current) {
 					autoplayPendingRef.current = false;
@@ -161,7 +166,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 		player.pause();
 
 		try {
-			// Yield the JS thread to allow the MiniPlayer to mount and animations to start
+			// Yield the JS thread to allow the player to mount and animations to start
 			// This prevents the heavy youtubei.js parsing from freezing the UI (e.g. blocking the BottomSheet from opening)
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -201,14 +206,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				player.showNowPlayingNotification = true;
 			} else {
 				Alert.alert("Errore", "Nessun flusso compatibile trovato.");
-				setCurrentVideo(null);
+				clearCurrentVideo();
 			}
 		} catch (e: any) {
 			Alert.alert("Errore", e.message || "Impossibile riprodurre.");
-			setCurrentVideo(null);
+			clearCurrentVideo();
 		} finally {
 			setIsLoading(false);
 		}
+	};
+
+	const clearCurrentVideo = () => {
+		setCurrentVideo(null);
+		setExpanded(false);
+	};
+
+	const openVideo = (video: VideoInfo) => {
+		setExpanded(true);
+		if (currentVideo?.videoId !== video.videoId) playVideo(video);
 	};
 
 	const pause = () => {
@@ -251,6 +266,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 				playPrevious,
 				maxQuality,
 				setMaxQuality,
+				isExpanded,
+				setExpanded,
+				openVideo,
 			}}
 		>
 			{children}

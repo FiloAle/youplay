@@ -24,6 +24,12 @@ export interface VideoInfo {
 	channelId?: string;
 }
 
+interface VideoDetails {
+	duration: string;
+	durationSeconds: number;
+	viewCount?: string;
+}
+
 export interface AudioStreamInfo {
 	url: string;
 	fallbackUrl?: string;
@@ -162,6 +168,8 @@ export function formatViewCount(viewsStr: string): string {
 class YouTubeService {
 	private yt: Innertube | null = null;
 	private initializing: Promise<void> | null = null;
+	private descriptionCache = new Map<string, string>();
+	private detailsCache = new Map<string, VideoDetails>();
 
 	// Shared client for lightweight metadata requests (search, channel info)
 	async init() {
@@ -572,13 +580,56 @@ class YouTubeService {
 		}
 	}
 
+	// Latest videos (RSS, no age filter) of several channels, merged and sorted by date.
+	async getRecentVideos(channelIds: string[]): Promise<VideoInfo[]> {
+		const results = await Promise.all(
+			channelIds.map((id) => this.getRecentChannelVideosRss(id)),
+		);
+		return sortVideosByDate(results.flat());
+	}
+
+	async getVideoDescription(videoId: string): Promise<string> {
+		const cached = this.descriptionCache.get(videoId);
+		if (cached !== undefined) return cached;
+
+		await this.init();
+		const info = await this.yt!.getBasicInfo(videoId);
+		const description = info.basic_info.short_description ?? "";
+		this.descriptionCache.set(videoId, description);
+		return description;
+	}
+
 	// Yields the feed progressively enriched with durations
 	async *enrichVideoDetails(videos: VideoInfo[], abortSignal?: () => boolean, pauseSignal?: () => boolean): AsyncGenerator<VideoInfo[]> {
 		await this.init();
 		const yt = this.yt!;
 		const updatedVideos = [...videos];
 
-		const videosToUpdate = updatedVideos.filter(v => v.duration === "Play" || v.durationSeconds === 0);
+		const applyDetails = (videoId: string, details: VideoDetails) => {
+			const index = updatedVideos.findIndex(vid => vid.videoId === videoId);
+			if (index === -1) return;
+			updatedVideos[index] = {
+				...updatedVideos[index],
+				duration: details.duration,
+				durationSeconds: details.durationSeconds,
+				viewCount: details.viewCount ?? updatedVideos[index].viewCount,
+			};
+		};
+
+		const needsUpdate = (v: VideoInfo) => v.duration === "Play" || v.durationSeconds === 0;
+
+		// Already-known videos are applied at once, without network requests.
+		let appliedFromCache = false;
+		for (const v of updatedVideos.filter(needsUpdate)) {
+			const cached = this.detailsCache.get(v.videoId);
+			if (cached) {
+				applyDetails(v.videoId, cached);
+				appliedFromCache = true;
+			}
+		}
+		if (appliedFromCache) yield [...updatedVideos];
+
+		const videosToUpdate = updatedVideos.filter(needsUpdate);
 
 		for (let i = 0; i < videosToUpdate.length; i++) {
 			if (abortSignal?.()) break;
@@ -597,12 +648,13 @@ class YouTubeService {
 				
 				if (info && info.basic_info) {
 					const durSecs = info.basic_info.duration || 0;
+					const isLive = info.basic_info.is_live || info.basic_info.is_upcoming;
 					
 					let durText = v.duration;
 					const start = info.basic_info.start_timestamp;
 					if (info.basic_info.is_upcoming && start) {
 						durText = formatUpcomingLabel(start);
-					} else if (info.basic_info.is_live || info.basic_info.is_upcoming) {
+					} else if (isLive) {
 						durText = "DAL VIVO";
 					} else if (durSecs > 0) {
 						const h = Math.floor(durSecs / 3600);
@@ -615,17 +667,16 @@ class YouTubeService {
 						}
 					}
 
-					const index = updatedVideos.findIndex(vid => vid.videoId === v.videoId);
-					if (index !== -1) {
-						updatedVideos[index] = {
-							...updatedVideos[index],
-							duration: durText,
-							durationSeconds: durSecs,
-							viewCount: info.basic_info.view_count 
-								? formatViewCount(info.basic_info.view_count.toString()) 
-								: updatedVideos[index].viewCount
-						};
-					}
+					const details: VideoDetails = {
+						duration: durText,
+						durationSeconds: durSecs,
+						viewCount: info.basic_info.view_count
+							? formatViewCount(info.basic_info.view_count.toString())
+							: undefined,
+					};
+					applyDetails(v.videoId, details);
+					// Live/scheduled labels change over time, so only regular videos are cached.
+					if (!isLive && durSecs > 0) this.detailsCache.set(v.videoId, details);
 				}
 			} catch (e) {
 				console.warn(`Failed to get basic info for ${v.videoId}`, e);
