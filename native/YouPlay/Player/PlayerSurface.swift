@@ -37,21 +37,28 @@ struct PlayerSurface: UIViewControllerRepresentable {
 
 	@MainActor
 	final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
+		private let flight = FullScreenFlight()
+
 		func playerViewController(
 			_ controller: AVPlayerViewController,
 			willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
 		) {
-			// The rotation only works once the full-screen controller is on screen.
-			coordinator.animate(alongsideTransition: nil) { _ in
-				OrientationLock.set(.landscape)
-			}
+			flight.enter(from: controller, with: coordinator)
 		}
 
 		func playerViewController(
 			_ controller: AVPlayerViewController,
 			willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
 		) {
-			OrientationLock.set(.portrait)
+			flight.exit(from: controller, with: coordinator)
+			// AVKit pauses the player at the end of this transition, so a video that was playing gets resumed.
+			let wasPlaying = controller.player?.timeControlStatus != .paused
+			coordinator.animate(alongsideTransition: nil) { context in
+				// A swipe that doesn't go through leaves the video in full screen, still playing.
+				if wasPlaying && !context.isCancelled {
+					DispatchQueue.main.async { controller.player?.play() }
+				}
+			}
 		}
 	}
 }

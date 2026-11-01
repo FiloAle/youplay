@@ -28,6 +28,7 @@ final class PlayerModel {
 
 	private var nowPlaying: NowPlayingController?
 	private var streamURL: URL?
+	private var keptSubtitles: String?
 	private var loadTask: Task<Void, Never>?
 	private var toastTask: Task<Void, Never>?
 	private var playbackObservation: NSKeyValueObservation?
@@ -72,11 +73,18 @@ final class PlayerModel {
 		guard let streamURL, let current else { return }
 
 		// AVPlayer would keep playing what it has already buffered, so the item gets replaced.
+		let previous = player.currentItem
 		let time = player.currentTime()
 		let wasPlaying = isPlaying
-		player.replaceCurrentItem(with: makeItem(streamURL, video: current))
-		player.seek(to: time)
-		if wasPlaying { player.play() }
+		loadTask?.cancel()
+		loadTask = Task {
+			let item = makeItem(streamURL, video: current)
+			await selectTracks(of: item, keeping: previous)
+			guard !Task.isCancelled else { return }
+			player.replaceCurrentItem(with: item)
+			await player.seek(to: time)
+			if wasPlaying { player.play() }
+		}
 	}
 
 	/// Stops everything and removes the player from the screen. The queue goes too, since it's only visible in the player.
@@ -130,13 +138,15 @@ final class PlayerModel {
 				try Task.checkCancellation()
 				description = stream.description
 				streamURL = stream.url
-				player.replaceCurrentItem(with: makeItem(stream.url, video: video))
+				let item = makeItem(stream.url, video: video)
+				await selectTracks(of: item)
+				try Task.checkCancellation()
+				player.replaceCurrentItem(with: item)
 				player.play()
 				isLoading = false
-			} catch is CancellationError {
-				return
 			} catch {
-				fail(with: error.localizedDescription)
+				// Another video was opened meanwhile. A network request reports that as an error of its own.
+				if !Task.isCancelled { fail(with: error.localizedDescription) }
 			}
 		}
 	}
@@ -154,6 +164,43 @@ final class PlayerModel {
 		]
 		observeStatus(of: item)
 		return item
+	}
+
+	/// The original language, or what `previous` was using. No track is marked as the default, so iOS would go for
+	/// the dub in the phone's language. Subtitles get selected later, by `selectSubtitles`.
+	private func selectTracks(of item: AVPlayerItem, keeping previous: AVPlayerItem? = nil) async {
+		if let audio = try? await item.asset.loadMediaSelectionGroup(for: .audible) {
+			let kept = await selectedTrackName(in: previous, for: .audible)
+			let option = audio.options.first { option in
+				if let kept { option.trackName == kept } else { option.trackName?.hasSuffix("original") == true }
+			}
+			if let option { item.select(option, in: audio) }
+		}
+		keptSubtitles = await selectedTrackName(in: previous, for: .legible)
+	}
+
+	/// No subtitles, or the ones `keptSubtitles` names. Right after an item gets ready, iOS turns on the ones in the
+	/// phone's language for audio in another one, ignoring the item's selection, the player's criteria and the manifest.
+	/// So for a moment its choice gets undone. Too early to be the viewer's, whose choices from the menu stay.
+	private func selectSubtitles(of item: AVPlayerItem) async {
+		guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
+		let option = group.options.first { keptSubtitles != nil && $0.trackName == keptSubtitles }
+		let select = {
+			if item.currentMediaSelection.selectedMediaOption(in: group) != option { item.select(option, in: group) }
+		}
+		select()
+		let observer = NotificationCenter.default.addObserver(
+			forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+			object: item,
+			queue: .main
+		) { _ in select() }
+		try? await Task.sleep(for: .seconds(1))
+		NotificationCenter.default.removeObserver(observer)
+	}
+
+	private func selectedTrackName(in item: AVPlayerItem?, for characteristic: AVMediaCharacteristic) async -> String? {
+		guard let item, let group = try? await item.asset.loadMediaSelectionGroup(for: characteristic) else { return nil }
+		return item.currentMediaSelection.selectedMediaOption(in: group)?.trackName
 	}
 
 	private func fail(with message: String) {
@@ -211,8 +258,14 @@ final class PlayerModel {
 
 	private func observeStatus(of item: AVPlayerItem) {
 		itemObservation = item.observe(\.status) { [weak self] item, _ in
-			guard item.status == .failed else { return }
-			Task { @MainActor in self?.fail(with: "Il player ha rifiutato lo stream video.") }
+			let status = item.status
+			Task { @MainActor in
+				switch status {
+				case .failed: self?.fail(with: "Il player ha rifiutato lo stream video.")
+				case .readyToPlay: await self?.selectSubtitles(of: item)
+				default: break
+				}
+			}
 		}
 	}
 
@@ -221,5 +274,12 @@ final class PlayerModel {
 		item.identifier = identifier
 		item.value = value as NSString
 		return item
+	}
+}
+
+private extension AVMediaSelectionOption {
+	/// The only thing that tells tracks apart: "American English - original", "Italiano - dubbed-auto".
+	var trackName: String? {
+		AVMetadataItem.metadataItems(from: commonMetadata, filteredByIdentifier: .commonIdentifierTitle).first?.stringValue
 	}
 }
