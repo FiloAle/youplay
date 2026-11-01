@@ -2,7 +2,7 @@
 
 SwiftUI version of YouPlay, with no third-party dependencies. Requires iOS 26.
 
-Open `YouPlay.xcodeproj` in Xcode and run the `YouPlay` scheme. It installs next to the Expo app, with its own bundle ID.
+Open `YouPlay.xcodeproj` in Xcode and run the `YouPlay` scheme. It has the Expo app's bundle ID, so it installs as an update of it.
 
 ## Structure
 
@@ -17,7 +17,7 @@ Open `YouPlay.xcodeproj` in Xcode and run the `YouPlay` scheme. It installs next
 
 ## Data from the Expo app
 
-`SubscriptionStore` reads the file the Expo app keeps in Documents (`subscriptions-backup.json`), in every format it has ever written. To inherit it, the app must ship with the Expo app's bundle ID (`com.filippoaleee.youplay`), so that it installs as an update. Exported backups work with the Importa action too.
+`SubscriptionStore` reads the file the Expo app keeps in Documents (`subscriptions-backup.json`), in every format it has ever written. It inherits the file because it has the Expo app's bundle ID (`com.filippoaleee.youplay`). Exported backups work with the Importa action too.
 
 ## YouTube clients
 
