@@ -51,18 +51,19 @@ actor InnerTubeClient {
 		userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip"
 	)
 
-	private static let channelsFilter = "EgIQAg=="
 	private static let videosTab = "EgZ2aWRlb3PyBgQKAjoA"
 	private static let liveTab = "EgdzdHJlYW1z8gYECgJ6AA=="
 
 	private var visitorTask: Task<String?, Error>?
 
-	nonisolated func searchChannels(_ query: String) async throws -> [Channel] {
-		let response = try await Self.post("search", client: Self.web, body: [
-			"query": query,
-			"params": Self.channelsFilter,
-		])
-		return InnerTubeParser.channels(in: response)
+	nonisolated func search(_ query: String) async throws -> SearchResults {
+		let response = try await Self.post("search", client: Self.web, body: ["query": query])
+		return SearchResults(query: query, page: InnerTubeParser.searchPage(in: response))
+	}
+
+	nonisolated func searchPage(continuation: String) async throws -> SearchPage {
+		let response = try await Self.post("search", client: Self.web, body: ["continuation": continuation])
+		return InnerTubeParser.searchPage(in: response)
 	}
 
 	/// Videos and past live streams, merged. A channel with no live tab just adds nothing.

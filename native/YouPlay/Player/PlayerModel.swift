@@ -50,7 +50,7 @@ final class PlayerModel {
 
 	func open(_ video: Video) {
 		isExpanded = true
-		if current?.id != video.id { load(video, autoplay: true) }
+		if current?.id != video.id { load(video) }
 	}
 
 	func togglePlayback() {
@@ -63,7 +63,7 @@ final class PlayerModel {
 			player.seek(to: .zero)
 			return
 		}
-		load(queue.removeFirst(), autoplay: true)
+		load(queue.removeFirst())
 	}
 
 	func setMaxQuality(_ height: Int) {
@@ -87,17 +87,15 @@ final class PlayerModel {
 
 	// MARK: Queue
 
+	/// The queue is what comes after the current video, so without one there's nothing to add to.
 	func enqueue(_ video: Video) {
-		if current?.id == video.id {
+		guard let current else { return }
+		if current.id == video.id {
 			showToast("Già in riproduzione")
 		} else if queue.contains(where: { $0.id == video.id }) {
 			showToast("Già in coda")
 		} else {
-			if current == nil {
-				load(video, autoplay: false)
-			} else {
-				queue.append(video)
-			}
+			queue.append(video)
 			showToast("Aggiunto alla coda")
 		}
 	}
@@ -117,7 +115,7 @@ final class PlayerModel {
 
 	// MARK: Private
 
-	private func load(_ video: Video, autoplay: Bool) {
+	private func load(_ video: Video) {
 		current = video
 		description = nil
 		streamURL = nil
@@ -133,7 +131,7 @@ final class PlayerModel {
 				description = stream.description
 				streamURL = stream.url
 				player.replaceCurrentItem(with: makeItem(stream.url, video: video))
-				if autoplay { player.play() }
+				player.play()
 				isLoading = false
 			} catch is CancellationError {
 				return
@@ -160,7 +158,8 @@ final class PlayerModel {
 
 	private func fail(with message: String) {
 		errorMessage = message
-		reset()
+		// A queue can't outlive what's playing, so it moves on to what's next.
+		if queue.isEmpty { reset() } else { load(queue.removeFirst()) }
 	}
 
 	private func reset() {

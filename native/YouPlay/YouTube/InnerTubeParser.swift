@@ -2,25 +2,86 @@ import Foundation
 
 /// Turns InnerTube responses into models. Keys are searched at any depth, since their nesting changes often.
 enum InnerTubeParser {
-	static func channels(in response: JSONValue) -> [Channel] {
-		response.all("channelRenderer").compactMap { renderer in
-			guard
-				let id = renderer["channelId"]?.string,
-				let name = renderer["title"]?.text,
-				!name.isEmpty
-			else { return nil }
-			// The subscriber count may be in either field, with the handle in the other.
-			let subscribers = [renderer["videoCountText"], renderer["subscriberCountText"]]
-				.compactMap { $0?.text }
-				.first(where: isSubscriberCount)
-			return Channel(
-				id: id,
-				name: name,
-				thumbnail: renderer["thumbnail"]?["thumbnails"]?.largestImageURL?.absoluteString,
-				subscribers: subscribers,
-				description: renderer["descriptionSnippet"]?.text
-			)
+	/// Goes through the sections in order, since their order is YouTube's relevance. Shorts and playlists are skipped.
+	static func searchPage(in response: JSONValue) -> SearchPage {
+		let sections = response.first("sectionListRenderer")?["contents"]?.array
+			?? response.first("appendContinuationItemsAction")?["continuationItems"]?.array
+			?? []
+		let items = sections
+			.flatMap { $0["itemSectionRenderer"]?["contents"]?.array ?? [] }
+			.flatMap(searchItems)
+
+		var seen = Set<String>()
+		return SearchPage(
+			items: items.filter { seen.insert($0.id).inserted },
+			continuation: sections.last?["continuationItemRenderer"]?.first("token")?.string
+		)
+	}
+
+	private static func searchItems(from result: JSONValue) -> [SearchItem] {
+		if let renderer = result["channelRenderer"] {
+			return channel(fromRenderer: renderer).map { [.channel($0)] } ?? []
 		}
+		if let renderer = result["videoRenderer"] {
+			return video(fromRenderer: renderer).map { [.video($0)] } ?? []
+		}
+		// A group of videos within the results, like a channel's latest ones.
+		if let shelf = result["shelfRenderer"] {
+			return shelf.all("videoRenderer").compactMap(video(fromRenderer:)).map { .video($0) }
+		}
+		return []
+	}
+
+	private static func channel(fromRenderer renderer: JSONValue) -> Channel? {
+		guard
+			let id = renderer["channelId"]?.string,
+			let name = renderer["title"]?.text,
+			!name.isEmpty
+		else { return nil }
+		// The subscriber count may be in either field, with the handle in the other.
+		let subscribers = [renderer["videoCountText"], renderer["subscriberCountText"]]
+			.compactMap { $0?.text }
+			.first(where: isSubscriberCount)
+		return Channel(
+			id: id,
+			name: name,
+			thumbnail: renderer["thumbnail"]?["thumbnails"]?.largestImageURL?.absoluteString,
+			subscribers: subscribers,
+			description: renderer["descriptionSnippet"]?.text
+		)
+	}
+
+	private static func video(fromRenderer renderer: JSONValue) -> Video? {
+		let owner = renderer["ownerText"]?["runs"]?.array.first
+		guard
+			let id = renderer["videoId"]?.string,
+			let title = renderer["title"]?.text,
+			let channelID = owner?.first("browseId")?.string,
+			let channelName = owner?["text"]?.string,
+			renderer["navigationEndpoint"]?["reelWatchEndpoint"] == nil
+		else { return nil }
+
+		let badges = renderer["badges"]?.array.compactMap { $0.first("label")?.string } ?? []
+		if badges.contains(where: isMembersOnly) { return nil }
+
+		let duration = renderer["lengthText"]?.text
+		let scheduledAt = renderer["upcomingEventData"]?["startTime"]?.string
+			.flatMap(TimeInterval.init)
+			.map(Date.init(timeIntervalSince1970:))
+		// Without a duration or a schedule it's live right now, which channel pages leave out too.
+		guard duration != nil || scheduledAt != nil else { return nil }
+
+		return Video(
+			id: id,
+			title: title,
+			channelID: channelID,
+			channelName: channelName,
+			thumbnailURL: renderer["thumbnail"]?["thumbnails"]?.largestImageURL,
+			duration: duration,
+			views: (renderer["shortViewCountText"] ?? renderer["viewCountText"])?.text,
+			publishedAt: renderer["publishedTimeText"]?.text.flatMap(Format.date(fromRelative:)),
+			scheduledAt: scheduledAt
+		)
 	}
 
 	static func channel(id: String, in response: JSONValue) -> Channel {

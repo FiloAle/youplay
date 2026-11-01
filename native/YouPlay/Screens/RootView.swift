@@ -31,7 +31,9 @@ struct RootView: View {
 				// free on every screen, since the bottom has the tab bar and the mini player.
 				ToastView(message: toast)
 					.frame(height: Metrics.toolbarHeight)
-					.transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
+					.transition(.opacity.combined(with: .scale(scale: 0.9)))
+					// Without it, a view being removed from a ZStack animates behind the others.
+					.zIndex(1)
 					.allowsHitTesting(false)
 			}
 		}

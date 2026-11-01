@@ -19,7 +19,7 @@ struct PlayerDetails: View {
 				.contentRow(top: Spacing.lg)
 
 			if !related.isEmpty {
-				SectionTitle(title: "Altro da \(relatedCategory ?? video.channelName)")
+				SectionTitle(title: "Altro da \(relatedCategory ?? channel.name)")
 				// Within a single channel, repeating its name on every row adds nothing.
 				ForEach(related) { VideoRow(video: $0, showsChannel: relatedCategory != nil) }
 			}

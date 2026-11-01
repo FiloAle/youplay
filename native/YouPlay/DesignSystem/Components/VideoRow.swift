@@ -56,6 +56,7 @@ struct VideoRow: View {
 		Button("Aggiungi alla coda", systemImage: "text.line.last.and.arrowtriangle.forward") {
 			player.enqueue(video)
 		}
+		.disabled(player.current == nil)
 		if showsChannel {
 			Button("Vai al canale", systemImage: "person.crop.circle") {
 				router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
