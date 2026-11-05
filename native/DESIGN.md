@@ -15,7 +15,7 @@ Goal: clean, clear, modern, minimal. It should feel like an app made by Apple.
 
 | Token | Use | System color |
 |---|---|---|
-| `accent` | App tint: icons in toolbars and menus, buttons, selected tab | `systemRed` (the current YouPlay red) |
+| `accent` | App tint: icons in toolbars and menus, buttons, selected tab, live badge | `systemRed` (the current YouPlay red) |
 | `background` | Screens, expanded player | `systemBackground` |
 | `surface` | Boxes on top of the background | `secondarySystemBackground` |
 | `placeholder` | Images still loading | `tertiarySystemFill` |

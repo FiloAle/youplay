@@ -13,6 +13,7 @@ final class HomeFeedModel {
 	private nonisolated static let maxConcurrentRequests = 6
 
 	private var videosByChannel: [String: [Video]] = [:]
+	private var liveIDs: Set<String> = []
 
 	init() {
 		guard
@@ -49,10 +50,28 @@ final class HomeFeedModel {
 			}
 		}
 		save()
+		await updateLiveVideos()
+	}
+
+	/// The feeds don't say what's live right now. Only a video with no known duration can be, and after the first
+	/// load those are few. Scheduled ones aren't live yet, so they stay where their date puts them.
+	private func updateLiveVideos() async {
+		let candidates = videosByChannel.values.joined().filter { $0.duration == nil }.map(\.id)
+		await withTaskGroup(of: (String, VideoDetails?).self) { group in
+			for id in candidates {
+				group.addTask { (id, await VideoDetailsCache.shared.details(for: id)) }
+			}
+			for await (id, details) in group {
+				guard let isLive = details?.isLive, isLive != liveIDs.contains(id) else { continue }
+				if isLive { liveIDs.insert(id) } else { liveIDs.remove(id) }
+				publish()
+			}
+		}
 	}
 
 	private func publish() {
-		videos = InnerTubeParser.merged(videosByChannel.values.flatMap(\.self))
+		let merged = InnerTubeParser.merged(videosByChannel.values.flatMap(\.self))
+		videos = merged.filter { liveIDs.contains($0.id) } + merged.filter { !liveIDs.contains($0.id) }
 	}
 
 	private func save() {

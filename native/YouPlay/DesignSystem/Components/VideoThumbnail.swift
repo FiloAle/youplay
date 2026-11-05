@@ -18,15 +18,19 @@ struct VideoThumbnail: View {
 						.foregroundStyle(Palette.badgeText)
 						.padding(.horizontal, isCompact ? Spacing.xs : Spacing.sm)
 						.padding(.vertical, isCompact ? Spacing.xxs : Spacing.xs)
-						.background(Palette.badgeBackground, in: .rect(cornerRadius: Radius.sm, style: .continuous))
+						.background(isLive ? Palette.accent : Palette.badgeBackground, in: .rect(cornerRadius: Radius.sm, style: .continuous))
 						.padding(isCompact ? Spacing.xs : Spacing.sm)
 				}
 			}
 			.task(id: video.id) { await loadDetailsIfNeeded() }
 	}
 
+	private var isLive: Bool {
+		details?.isLive == true
+	}
+
 	private var badge: String? {
-		if details?.isLive == true { return "DAL VIVO" }
+		if isLive { return "DAL VIVO" }
 		if let scheduledAt = details?.scheduledAt ?? video.scheduledAt { return Format.upcoming(scheduledAt) }
 		return video.duration ?? details?.duration
 	}
