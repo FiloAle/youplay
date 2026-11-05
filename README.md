@@ -1,37 +1,36 @@
 # YouPlay
 
-A React Native iOS app (built with Expo) that transforms YouTube into a podcast experience. Listen to your favorite channels in the background with a clean interface, fully integrated system audio player.
+An iOS app that turns YouTube into a podcast experience: follow channels and listen in the background, with the system player and lock screen controls.
 
-## Features
+Written in SwiftUI, with no third-party dependencies. Requires iOS 26.
 
-- **Search & Follow:** Search for YouTube channels and follow them to always have them at your fingertips
-- **Native Background Player:** The player uses native `expo-audio` to play audio in the background, with full support for iOS lock screen controls
-- **Playback Queue:** Add episodes to your queue for seamless listening
+Open `YouPlay.xcodeproj` in Xcode and run the `YouPlay` scheme.
 
-## Development
+The app started out in Expo. That version is in the `expo-final` tag. The native app has the same bundle ID, so it installs as an update of it.
 
-The project is specifically focused on the iOS ecosystem, but feel free to extend it to Android too.
+## Structure
 
-### Installation
+| Folder | Contents |
+|---|---|
+| `YouPlay/App` | App entry point, navigation, orientation |
+| `YouPlay/DesignSystem` | Tokens and reusable components. Rules are in [DESIGN.md](DESIGN.md) |
+| `YouPlay/YouTube` | InnerTube and RSS clients, parsing, models |
+| `YouPlay/Library` | Followed channels, categories, backups |
+| `YouPlay/Player` | Player, queue, drag gesture, lock screen |
+| `YouPlay/Screens` | Home, Followed, Search, Channel |
 
-To install dependencies (the necessary patches, including the ones for `expo-audio`, will be applied automatically thanks to the `postinstall` script):
+## Data from the Expo app
+
+`SubscriptionStore` reads the file the Expo app keeps in Documents (`subscriptions-backup.json`), in every format it has ever written. It inherits the file because it has the Expo app's bundle ID (`com.filippoaleee.youplay`). Exported backups work with the Importa action too.
+
+## YouTube clients
+
+InnerTube has no public contract. If playback or parsing breaks, start from `InnerTubeClient.swift` (client names and versions) and `InnerTubeParser.swift` (response keys). The values come from `youtubei.js`, whose `Constants` file is the first place to check for updates.
+
+## Measuring frames
+
+Debug builds log every player transition:
 
 ```bash
-npm install
-```
-
-### Running on an iOS Device
-
-Since this is an app with native code (and cannot be run in Expo Go), you must build and run it on your own wired device:
-
-```bash
-npx expo run:ios --device
-```
-
-### Release Build (Production)
-
-To test the real performance of the app without the overhead of the development server, you can build the Release version:
-
-```bash
-npx expo run:ios --device --configuration Release
+xcrun simctl spawn booted log show --last 5m --style compact --predicate 'subsystem == "com.filippoaleee.youplay.native"'
 ```
