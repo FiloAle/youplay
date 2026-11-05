@@ -14,6 +14,8 @@ struct PlayerControls: View {
 	/// Changes on every touch of a control, which restarts the timeout.
 	@State private var touches = 0
 	@State private var isShowingQueue = false
+	@State private var skipFeedback: SkipFeedback?
+	@State private var width: CGFloat = 0
 
 	private static let skipInterval = 10.0
 
@@ -28,11 +30,20 @@ struct PlayerControls: View {
 			Color.clear
 				.contentShape(.rect)
 				.ignoresSafeArea()
+				.onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
+				// Declared first, so that a double tap skips without also showing or hiding the controls.
+				.onTapGesture(count: 2) { location in skip(towards: location) }
 				.onTapGesture { isVisible.toggle() }
+			SkipFeedbackOverlay(feedback: skipFeedback)
 			// Hidden rather than removed: removing it would close the settings menu if it's open.
+			transport
+				.opacity(isVisible ? 1 : 0)
+				.allowsHitTesting(isVisible)
 			controls
 				.padding(.horizontal, isFullScreen ? Spacing.lg : Spacing.xs)
-				.padding(.vertical, Spacing.xs)
+				.padding(.top, Spacing.xs)
+				// On the page, clear of the progress bar on the video's edge.
+				.padding(.bottom, isFullScreen ? Spacing.xs : Spacing.md)
 				.opacity(isVisible ? 1 : 0)
 				.allowsHitTesting(isVisible)
 			if !isFullScreen {
@@ -43,6 +54,12 @@ struct PlayerControls: View {
 			}
 		}
 		.animation(Motion.standard, value: isVisible)
+		.animation(Motion.standard, value: skipFeedback)
+		.task(id: skipFeedback?.id) {
+			guard skipFeedback != nil else { return }
+			try? await Task.sleep(for: Motion.skipFeedbackDuration)
+			if !Task.isCancelled { skipFeedback = nil }
+		}
 		// Presented from the controls, so that it also opens on top of full screen.
 		.sheet(isPresented: $isShowingQueue) { QueueSheet() }
 		// The page's controls are under the video while it flies in and out of full screen, and would pop out
@@ -56,6 +73,21 @@ struct PlayerControls: View {
 			try? await Task.sleep(for: Motion.controlsTimeout)
 			if !Task.isCancelled { isVisible = false }
 		}
+	}
+
+	/// In the middle of the whole video, apart from the rows at its edges: in full screen those keep clear
+	/// of the home indicator, which is only at the bottom, and the bottom one also holds the progress bar.
+	private var transport: some View {
+		HStack(spacing: Spacing.xl) {
+			control("gobackward.10", label: "Indietro di 10 secondi", emphasis: .secondary) { player.skip(by: -Self.skipInterval) }
+				.disabled(!player.canSkip(by: -Self.skipInterval))
+			playbackControl
+			control("goforward.10", label: "Avanti di 10 secondi", emphasis: .secondary) { player.skip(by: Self.skipInterval) }
+				.disabled(!player.canSkip(by: Self.skipInterval))
+		}
+		.controlSize(isFullScreen ? .large : .regular)
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.ignoresSafeArea()
 	}
 
 	private var controls: some View {
@@ -73,14 +105,6 @@ struct PlayerControls: View {
 				VideoSettingsMenu()
 			}
 			Spacer(minLength: 0)
-			HStack(spacing: Spacing.xl) {
-				control("gobackward.10", label: "Indietro di 10 secondi") { player.skip(by: -Self.skipInterval) }
-					.disabled(player.isWaiting)
-				playbackControl
-				control("goforward.10", label: "Avanti di 10 secondi") { player.skip(by: Self.skipInterval) }
-					.disabled(player.isWaiting)
-			}
-			Spacer(minLength: 0)
 			HStack(spacing: 0) {
 				PlaybackTime(scrubPosition: scrubPosition)
 					.padding(.leading, Spacing.sm)
@@ -91,9 +115,13 @@ struct PlayerControls: View {
 					action: toggleFullScreen
 				)
 			}
+			// Above the bar's touch area, which reaches up into this row.
+			.zIndex(1)
 			if isFullScreen {
 				ProgressScrubber(isActive: true, position: $scrubPosition)
 					.padding(.horizontal, Spacing.sm)
+					// Its touch area is taller than the line, which would otherwise sit far below the row.
+					.padding(.top, -Spacing.md)
 			}
 		}
 	}
@@ -101,7 +129,7 @@ struct PlayerControls: View {
 	@ViewBuilder
 	private var playbackControl: some View {
 		if player.isWaiting {
-			VideoControlCircle(isProminent: true) {
+			VideoControlCircle(emphasis: .primary) {
 				ProgressView()
 					.tint(Palette.badgeText)
 			}
@@ -109,17 +137,32 @@ struct PlayerControls: View {
 			control(
 				player.isPlaying ? "pause.fill" : "play.fill",
 				label: player.isPlaying ? "Pausa" : "Riproduci",
-				isProminent: true,
+				emphasis: .primary,
 				action: player.togglePlayback
 			)
 		}
 	}
 
-	private func control(_ systemName: String, label: String, isProminent: Bool = false, action: @escaping () -> Void) -> some View {
-		VideoControlButton(systemName: systemName, label: label, isProminent: isProminent) {
+	private func control(
+		_ systemName: String,
+		label: String,
+		emphasis: VideoControlEmphasis = .standard,
+		action: @escaping () -> Void
+	) -> some View {
+		VideoControlButton(systemName: systemName, label: label, emphasis: emphasis) {
 			touches += 1
 			action()
 		}
+	}
+
+	/// The right half of the video skips forward, the left half back. Taps in a row add up, like "+30".
+	private func skip(towards location: CGPoint) {
+		let isForward = location.x > width / 2
+		let seconds = isForward ? Self.skipInterval : -Self.skipInterval
+		guard player.canSkip(by: seconds) else { return }
+		player.skip(by: seconds)
+		let previous = skipFeedback?.isForward == isForward ? skipFeedback?.seconds ?? 0 : 0
+		skipFeedback = SkipFeedback(isForward: isForward, seconds: previous + Int(Self.skipInterval))
 	}
 
 	private func toggleFullScreen() {
@@ -128,6 +171,42 @@ struct PlayerControls: View {
 		} else {
 			player.stage.enterFullScreen(controls: PlayerControls(isFullScreen: true).environment(player).tint(Palette.accent))
 		}
+	}
+}
+
+private struct SkipFeedback: Equatable {
+	let isForward: Bool
+	let seconds: Int
+	/// New for every tap, so that each one keeps the label up a little longer.
+	let id = UUID()
+}
+
+/// "+10" or "-10" in the half of the video that was double tapped.
+private struct SkipFeedbackOverlay: View {
+	let feedback: SkipFeedback?
+
+	var body: some View {
+		HStack(spacing: 0) {
+			slot(isForward: false)
+			slot(isForward: true)
+		}
+		.ignoresSafeArea()
+		.allowsHitTesting(false)
+	}
+
+	private func slot(isForward: Bool) -> some View {
+		ZStack {
+			if let feedback, feedback.isForward == isForward {
+				Text(isForward ? "+\(feedback.seconds)" : "-\(feedback.seconds)")
+					.font(Typography.skipFeedback)
+					.foregroundStyle(Palette.badgeText)
+					.padding(.horizontal, Spacing.lg)
+					.padding(.vertical, Spacing.sm)
+					.glassEffect(.regular, in: .capsule)
+					.transition(.opacity.combined(with: .scale(scale: 0.8)))
+			}
+		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
 	}
 }
 
@@ -200,7 +279,8 @@ private struct ProgressScrubber: View {
 	}
 
 	private func drag(width: CGFloat, duration: Double) -> some Gesture {
-		DragGesture(minimumDistance: 0)
+		// Only a drag moves it: a stray tap near the video's edge mustn't jump through the video.
+		DragGesture(minimumDistance: Metrics.scrubMinimumDistance)
 			.onChanged { value in
 				isDragging = true
 				position = min(1, max(0, value.location.x / max(width, 1)))

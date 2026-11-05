@@ -33,6 +33,11 @@ enum Typography {
 	static let badge = Font.caption.weight(.semibold).monospacedDigit()
 	static let videoControl = Font.footnote.weight(.semibold)
 	static let prominentVideoControl = Font.title2.weight(.semibold)
+	static let secondaryVideoControl = Font.title3.weight(.semibold)
+	static let largeVideoControl = Font.title3.weight(.semibold)
+	static let largeSecondaryVideoControl = Font.title.weight(.semibold)
+	static let skipFeedback = Font.title3.weight(.semibold).monospacedDigit()
+	static let largeProminentVideoControl = Font.largeTitle.weight(.semibold)
 }
 
 enum Spacing {
@@ -54,9 +59,16 @@ enum Metrics {
 	/// Height of the navigation bar and of its buttons.
 	static let toolbarHeight: CGFloat = 44
 	static let videoControl: CGFloat = 34
+	static let secondaryVideoControl: CGFloat = 44
 	static let prominentVideoControl: CGFloat = 60
+	/// In full screen, where the video is much bigger.
+	static let largeVideoControl: CGFloat = 52
+	static let largeSecondaryVideoControl: CGFloat = 64
+	static let largeProminentVideoControl: CGFloat = 84
 	static let progressTrack: CGFloat = 3
 	static let progressThumb: CGFloat = 14
+	/// How far a finger moves on the progress bar before it counts as a drag.
+	static let scrubMinimumDistance: CGFloat = 8
 	static let disabledOpacity = 0.4
 	static let shadowRadius: CGFloat = 12
 }
@@ -77,6 +89,9 @@ enum Motion {
 	static func player(velocity: CGFloat = 0) -> Animation {
 		.interpolatingSpring(duration: transitionDuration, bounce: 0, initialVelocity: velocity)
 	}
+
+	/// How long "+10" stays on the video after a double tap.
+	static let skipFeedbackDuration: Duration = .milliseconds(700)
 
 	/// How long the video's controls stay on screen while it plays.
 	static let controlsTimeout: Duration = .seconds(3)

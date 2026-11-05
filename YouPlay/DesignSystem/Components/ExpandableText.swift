@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Long text in a box, collapsed to a few lines. The toggle only shows when something is cut off.
+/// Long text in a box, collapsed to a few lines. When something is cut off, tapping anywhere on the box
+/// expands or collapses it.
 struct ExpandableText: View {
 	let text: String
 
@@ -26,18 +27,26 @@ struct ExpandableText: View {
 						.onGeometryChange(for: CGFloat.self, of: \.size.height) { fullHeight = $0 }
 				}
 
-			if fullHeight > collapsedHeight + 1 || isExpanded {
-				Button(isExpanded ? "Mostra meno" : "Mostra di più") {
-					withAnimation(Motion.standard) { isExpanded.toggle() }
-				}
-				.font(Typography.rowTitle)
-				.foregroundStyle(Palette.textPrimary)
-				.buttonStyle(.plain)
+			if isExpandable {
+				Text(isExpanded ? "Mostra meno" : "Mostra di più")
+					.font(Typography.rowTitle)
+					.foregroundStyle(Palette.textPrimary)
 			}
 		}
 		.font(Typography.body)
 		.padding(Spacing.md)
 		.background(Palette.surface, in: .rect(cornerRadius: Radius.lg, style: .continuous))
+		.contentShape(.rect)
+		.onTapGesture {
+			guard isExpandable else { return }
+			withAnimation(Motion.standard) { isExpanded.toggle() }
+		}
+		.accessibilityAddTraits(isExpandable ? .isButton : [])
+		.accessibilityHint(isExpandable ? (isExpanded ? "Mostra meno" : "Mostra di più") : "")
 		.onChange(of: text) { isExpanded = false }
+	}
+
+	private var isExpandable: Bool {
+		fullHeight > collapsedHeight + 1 || isExpanded
 	}
 }

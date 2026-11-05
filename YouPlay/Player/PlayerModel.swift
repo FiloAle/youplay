@@ -86,6 +86,15 @@ final class PlayerModel {
 		if isPlaying { player.pause() } else { player.play() }
 	}
 
+	/// Whether skipping is possible right now: not while loading or in a live stream, nor past either end.
+	func canSkip(by seconds: Double) -> Bool {
+		guard current != nil, !isWaiting, !clock.isLive, clock.duration > 0 else { return false }
+		let time = player.currentTime().seconds
+		return seconds < 0 ? time > Self.skipMargin : time < clock.duration - Self.skipMargin
+	}
+
+	private static let skipMargin = 0.5
+
 	func skip(by seconds: Double) {
 		Task { await seek(to: player.currentTime().seconds + seconds) }
 	}
