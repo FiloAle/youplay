@@ -12,6 +12,13 @@ final class PlayerModel {
 	private(set) var description: String?
 	private(set) var isLoading = false
 	private(set) var isPlaying = false
+	/// Asked to play, but waiting for data: right after opening a video, after a seek, on a slow network.
+	private(set) var isBuffering = false
+
+	/// Nothing to show or control yet: the stream is being fetched, or the player is waiting for data.
+	var isWaiting: Bool {
+		isLoading || isBuffering
+	}
 	private(set) var errorMessage: String?
 	private(set) var toast: String?
 	private(set) var queue: [Video] = []
@@ -328,9 +335,10 @@ final class PlayerModel {
 
 	private func observePlayer() {
 		playbackObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
-			let isPlaying = player.timeControlStatus != .paused
+			let status = player.timeControlStatus
 			Task { @MainActor in
-				self?.isPlaying = isPlaying
+				self?.isPlaying = status != .paused
+				self?.isBuffering = status == .waitingToPlayAtSpecifiedRate
 				self?.nowPlaying?.update()
 			}
 		}

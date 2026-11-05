@@ -24,7 +24,7 @@ struct MiniPlayerControls: View {
 
 	@ViewBuilder
 	private var playbackControl: some View {
-		if player.isLoading {
+		if player.isWaiting {
 			VideoControlCircle {
 				ProgressView()
 					.controlSize(.small)

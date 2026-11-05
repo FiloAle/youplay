@@ -35,15 +35,16 @@ struct PlayerControls: View {
 				.opacity(isVisible ? 1 : 0)
 				.allowsHitTesting(isVisible)
 			if !isFullScreen {
-				// On the video's bottom edge, like a divider between the video and the page.
+				// The line rests on the video's bottom edge, inside it. The touch area reaches a little below.
 				ProgressScrubber(isActive: isVisible, position: $scrubPosition)
 					.frame(maxHeight: .infinity, alignment: .bottom)
-					.offset(y: Metrics.minimumTouchTarget / 2)
+					.offset(y: (Metrics.minimumTouchTarget - Metrics.progressTrack) / 2)
 			}
 		}
 		.animation(Motion.standard, value: isVisible)
-		.task(id: Timeout(isVisible: isVisible, isPlaying: player.isPlaying, isScrubbing: scrubPosition != nil, touches: touches)) {
-			guard isVisible, player.isPlaying, scrubPosition == nil else { return }
+		.task(id: Timeout(isVisible: isVisible, isPlaying: player.isPlaying && !player.isWaiting, isScrubbing: scrubPosition != nil, touches: touches)) {
+			// The spinner stays in sight until the video actually plays.
+			guard isVisible, player.isPlaying, !player.isWaiting, scrubPosition == nil else { return }
 			try? await Task.sleep(for: Motion.controlsTimeout)
 			if !Task.isCancelled { isVisible = false }
 		}
@@ -65,8 +66,10 @@ struct PlayerControls: View {
 			Spacer(minLength: 0)
 			HStack(spacing: Spacing.xl) {
 				control("gobackward.10", label: "Indietro di 10 secondi") { player.skip(by: -Self.skipInterval) }
+					.disabled(player.isWaiting)
 				playbackControl
 				control("goforward.10", label: "Avanti di 10 secondi") { player.skip(by: Self.skipInterval) }
+					.disabled(player.isWaiting)
 			}
 			Spacer(minLength: 0)
 			HStack(spacing: 0) {
@@ -88,7 +91,7 @@ struct PlayerControls: View {
 
 	@ViewBuilder
 	private var playbackControl: some View {
-		if player.isLoading {
+		if player.isWaiting {
 			VideoControlCircle(isProminent: true) {
 				ProgressView()
 					.tint(Palette.badgeText)
@@ -172,8 +175,9 @@ private struct ProgressScrubber: View {
 					Circle()
 						.fill(Palette.accent)
 						.frame(width: thumb, height: thumb)
-						.offset(x: width * fraction - thumb / 2)
+						// Scaled before it's moved, so it grows where it is and not from the bar's start.
 						.scaleEffect(isActive ? 1 : 0)
+						.offset(x: width * fraction - thumb / 2)
 				}
 				.frame(maxHeight: .infinity)
 				.contentShape(.rect)
@@ -232,10 +236,7 @@ private struct VideoSettingsMenu: View {
 				.pickerStyle(.menu)
 			}
 
-			if player.subtitleTracks.isEmpty {
-				Button("Sottotitoli non disponibili", systemImage: "captions.bubble") {}
-					.disabled(true)
-			} else {
+			if !player.subtitleTracks.isEmpty {
 				Picker("Sottotitoli", systemImage: "captions.bubble", selection: Binding(get: { player.selectedSubtitles }, set: player.selectSubtitles)) {
 					Text("Disattivati").tag(String?.none)
 					ForEach(player.subtitleTracks, id: \.self) { Text($0).tag(Optional($0)) }
