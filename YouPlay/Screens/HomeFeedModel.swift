@@ -12,8 +12,13 @@ final class HomeFeedModel {
 	private nonisolated static let recentWindow: TimeInterval = 7 * 24 * 3600
 	private nonisolated static let maxConcurrentRequests = 6
 
+	private nonisolated static let minimumReloadInterval: TimeInterval = 60
+
 	private var videosByChannel: [String: [Video]] = [:]
 	private var liveIDs: Set<String> = []
+	/// Upcoming premieres and lives. The feed dates them when they were created, not when they start.
+	private var scheduled: [String: Date] = [:]
+	private var loadedAt: Date?
 
 	init() {
 		guard
@@ -24,7 +29,14 @@ final class HomeFeedModel {
 		publish()
 	}
 
+	/// When the app comes back, unless it was just loaded.
+	func reloadIfStale(channelIDs: [String]) async {
+		guard !isLoading, Date.now.timeIntervalSince(loadedAt ?? .distantPast) > Self.minimumReloadInterval else { return }
+		await load(channelIDs: channelIDs)
+	}
+
 	func load(channelIDs: [String]) async {
+		loadedAt = .now
 		isLoading = true
 		defer { isLoading = false }
 
@@ -50,27 +62,35 @@ final class HomeFeedModel {
 			}
 		}
 		save()
-		await updateLiveVideos()
+		await updateBroadcasts()
 	}
 
-	/// The feeds don't say what's live right now. Only a video with no known duration can be, and after the first
-	/// load those are few. Scheduled ones aren't live yet, so they stay where their date puts them.
-	private func updateLiveVideos() async {
+	/// The feeds don't say what's live or still to start. Only a video with no known duration can be,
+	/// and after the first load those are few. Live ones go first, upcoming ones where their start puts them.
+	private func updateBroadcasts() async {
 		let candidates = videosByChannel.values.joined().filter { $0.duration == nil }.map(\.id)
 		await withTaskGroup(of: (String, VideoDetails?).self) { group in
 			for id in candidates {
 				group.addTask { (id, await VideoDetailsCache.shared.details(for: id)) }
 			}
 			for await (id, details) in group {
-				guard let isLive = details?.isLive, isLive != liveIDs.contains(id) else { continue }
+				guard let details else { continue }
+				let isLive = details.isLive
+				guard isLive != liveIDs.contains(id) || details.scheduledAt != scheduled[id] else { continue }
 				if isLive { liveIDs.insert(id) } else { liveIDs.remove(id) }
+				scheduled[id] = details.scheduledAt
 				publish()
 			}
 		}
 	}
 
 	private func publish() {
-		let merged = InnerTubeParser.merged(videosByChannel.values.flatMap(\.self))
+		let all = videosByChannel.values.flatMap(\.self).map { video in
+			var video = video
+			if let start = scheduled[video.id] { video.scheduledAt = start }
+			return video
+		}
+		let merged = InnerTubeParser.merged(all)
 		videos = merged.filter { liveIDs.contains($0.id) } + merged.filter { !liveIDs.contains($0.id) }
 	}
 

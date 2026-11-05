@@ -4,7 +4,11 @@ import Foundation
 enum RSSFeedClient {
 	static func videos(channelID: String) async throws -> [Video] {
 		var components = URLComponents(string: "https://www.youtube.com/feeds/videos.xml")!
-		components.queryItems = [URLQueryItem(name: "channel_id", value: channelID)]
+		components.queryItems = [
+			URLQueryItem(name: "channel_id", value: channelID),
+			// YouTube's CDN keeps a feed for up to 15 minutes, which hides new videos. A new URL skips it.
+			URLQueryItem(name: "_", value: String(Int(Date.now.timeIntervalSince1970))),
+		]
 		var request = URLRequest(url: components.url!)
 		request.cachePolicy = .reloadIgnoringLocalCacheData
 

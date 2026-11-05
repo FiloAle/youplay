@@ -4,6 +4,7 @@ struct HomeScreen: View {
 	@Environment(PlayerModel.self) private var player
 	@Environment(SubscriptionStore.self) private var subscriptions
 	@Environment(AppRouter.self) private var router
+	@Environment(\.scenePhase) private var scenePhase
 	@State private var feed = HomeFeedModel()
 	@State private var category: String?
 	@State private var isManagingCategories = false
@@ -27,6 +28,10 @@ struct HomeScreen: View {
 		.sheet(isPresented: $isManagingCategories) { ManageCategoriesSheet() }
 		.task(id: subscriptions.channels.map(\.id)) {
 			await feed.load(channelIDs: subscriptions.channels.map(\.id))
+		}
+		.onChange(of: scenePhase) { _, phase in
+			guard phase == .active else { return }
+			Task { await feed.reloadIfStale(channelIDs: subscriptions.channels.map(\.id)) }
 		}
 		.onChange(of: subscriptions.categories) {
 			if let category, !subscriptions.categories.contains(category) { self.category = nil }

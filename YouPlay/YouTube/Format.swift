@@ -18,10 +18,15 @@ enum Format {
 
 	/// "LIVE ALLE 21:00" if scheduled for today, otherwise "LIVE IL 25/09".
 	static func upcoming(_ date: Date) -> String {
+		"LIVE \(startTime(date).uppercased())"
+	}
+
+	/// "alle 21:00" if today, otherwise "il 25/09".
+	static func startTime(_ date: Date) -> String {
 		if Calendar.current.isDateInToday(date) {
-			return "LIVE ALLE \(date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(locale)))"
+			return "alle \(date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(locale)))"
 		}
-		return "LIVE IL \(date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).locale(locale)))"
+		return "il \(date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).locale(locale)))"
 	}
 
 	static func duration(seconds: Int) -> String {
@@ -61,11 +66,11 @@ enum Format {
 		return Calendar.current.date(byAdding: unit, value: -count, to: .now)
 	}
 
-	/// Parses "Programmato per il giorno 25/09/26, 16:00".
+	/// Parses "Programmato per il giorno 25/09/26, 16:00" and "Première: 25/09/26, 16:00".
 	static func date(fromScheduled text: String) -> Date? {
 		let lowercased = text.lowercased()
 		guard
-			lowercased.contains("programmat"),
+			["programmat", "première", "premiere"].contains(where: lowercased.contains),
 			let match = lowercased.firstMatch(of: /(\d{1,2})\/(\d{1,2})\/(\d{2,4}),?\s*(\d{1,2}):(\d{2})/),
 			let day = Int(match.1), let month = Int(match.2), let rawYear = Int(match.3),
 			let hour = Int(match.4), let minute = Int(match.5)

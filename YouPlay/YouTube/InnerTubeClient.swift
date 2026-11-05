@@ -3,11 +3,14 @@ import Foundation
 enum InnerTubeError: LocalizedError {
 	case http(Int)
 	case unplayable(String?)
+	/// A premiere or a live that hasn't started: not a failure, just early.
+	case notStarted(String?)
 
 	var errorDescription: String? {
 		switch self {
 		case .http(let code): "YouTube ha risposto con l'errore \(code)."
 		case .unplayable(let reason): reason ?? "Questo video non è riproducibile."
+		case .notStarted(let reason): reason ?? "Non è ancora iniziato."
 		}
 	}
 }
@@ -21,7 +24,13 @@ actor InnerTubeClient {
 		let userAgent: String
 
 		init(_ context: [String: String], userAgent: String) {
-			self.context = context.merging(["hl": "it", "gl": "IT"]) { $1 }
+			// Without the time zone, scheduled times come back in Pacific time.
+			self.context = context.merging([
+				"hl": "it",
+				"gl": "IT",
+				"timeZone": TimeZone.current.identifier,
+				"utcOffsetMinutes": String(TimeZone.current.secondsFromGMT() / 60),
+			]) { $1 }
 			self.userAgent = userAgent
 		}
 	}
@@ -102,7 +111,10 @@ actor InnerTubeClient {
 		let progressive = try await Self.post("player", client: Self.android, visitor: visitor, body: ["videoId": videoID])
 		if let stream = InnerTubeParser.stream(in: progressive) { return stream }
 
-		throw InnerTubeError.unplayable(hls["playabilityStatus"]?["reason"]?.string)
+		let status = hls["playabilityStatus"]
+		let reason = status?["reason"]?.string
+		if status?["status"]?.string == "LIVE_STREAM_OFFLINE" { throw InnerTubeError.notStarted(reason) }
+		throw InnerTubeError.unplayable(reason)
 	}
 
 	func details(videoID: String) async throws -> VideoDetails {
