@@ -10,7 +10,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 	) -> Bool {
 		URLCache.shared = URLCache(memoryCapacity: 20_000_000, diskCapacity: 200_000_000)
 
-		// Not a scene delegate: iOS keeps the scene sessions of the installed version, and an update
+		// Not from the scene delegate: iOS keeps the scene sessions of the installed version, and an update
 		// over one that had another delegate would never call this one, leaving a black screen.
 		// The scene may have connected already, which is why both cases are here.
 		NotificationCenter.default.addObserver(
@@ -25,6 +25,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 		return true
 	}
 
+	/// iOS 27 refuses to launch an app that doesn't adopt scenes, whatever does the work of showing the window.
+	func application(
+		_ application: UIApplication,
+		configurationForConnecting session: UISceneSession,
+		options: UIScene.ConnectionOptions
+	) -> UISceneConfiguration {
+		let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
+		configuration.delegateClass = SceneDelegate.self
+		return configuration
+	}
+
 	private func showWindow(in scene: UIScene?) {
 		guard mainWindow == nil, let scene = scene as? UIWindowScene else { return }
 		let window = UIWindow(windowScene: scene)
@@ -33,6 +44,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 		mainWindow = window
 	}
 }
+
+final class SceneDelegate: NSObject, UIWindowSceneDelegate {}
 
 /// Only the full-screen video rotates, which AVKit does on its own screen. If the app rotated with it,
 /// every list would be laid out again in landscape, underneath, while the video goes in and out of full screen.
