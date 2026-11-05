@@ -23,6 +23,7 @@ final class PlayerModel {
 	private(set) var toast: String?
 	private(set) var queue: [Video] = []
 	private(set) var maxQuality = UserDefaults.standard.integer(forKey: DefaultsKey.maxQuality)
+	/// The speed picked in the menu, kept for the next videos too.
 	private(set) var playbackRate: Float = 1
 	/// Names of the current video's tracks, as `name` gives them.
 	private(set) var audioTracks: [String] = []
@@ -48,7 +49,6 @@ final class PlayerModel {
 	private var bufferingTask: Task<Void, Never>?
 	private var toastTask: Task<Void, Never>?
 	private var playbackObservation: NSKeyValueObservation?
-	private var rateObservation: NSKeyValueObservation?
 	private var itemObservation: NSKeyValueObservation?
 	private var endObserver: NSObjectProtocol?
 
@@ -66,6 +66,7 @@ final class PlayerModel {
 			player.defaultRate = savedRate
 			playbackRate = savedRate
 		}
+		clock.onLiveEdgeChange = { [weak self] in self?.applyRate() }
 
 		nowPlaying = NowPlayingController(player: player) { [weak self] in self?.playNext() }
 		observePlayer()
@@ -86,10 +87,16 @@ final class PlayerModel {
 		if isPlaying { player.pause() } else { player.play() }
 	}
 
-	/// Whether skipping is possible right now: not while loading or in a live stream, nor past either end.
+	/// Whether skipping is possible right now: not while loading, nor past either end of the video
+	/// or of a live stream's window. Forward in a live stream only goes as far as live.
 	func canSkip(by seconds: Double) -> Bool {
-		guard current != nil, !isWaiting, !clock.isLive, clock.duration > 0 else { return false }
+		guard current != nil, !isWaiting else { return false }
 		let time = player.currentTime().seconds
+		if clock.isLive {
+			guard let range = clock.seekableRange else { return false }
+			return seconds < 0 ? time > range.lowerBound + Self.skipMargin : !clock.isAtLiveEdge
+		}
+		guard clock.duration > 0 else { return false }
 		return seconds < 0 ? time > Self.skipMargin : time < clock.duration - Self.skipMargin
 	}
 
@@ -100,17 +107,38 @@ final class PlayerModel {
 	}
 
 	func seek(to seconds: Double) async {
-		let upper = clock.duration > 0 ? clock.duration : .greatestFiniteMagnitude
-		await player.seek(to: CMTime(seconds: min(max(0, seconds), upper), preferredTimescale: 600))
+		let range = clock.seekableRange ?? (clock.duration > 0 ? 0...clock.duration : nil)
+		let target = range.map { min(max($0.lowerBound, seconds), $0.upperBound) } ?? max(0, seconds)
+		await player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
 		clock.refresh()
 	}
 
-	/// Kept for the next videos too.
+	/// Back to what's happening now, from further back in a live stream.
+	func seekToLiveEdge() {
+		guard let end = clock.seekableRange?.upperBound else { return }
+		Task {
+			// Not before it: the nearest segment start would land several seconds behind live.
+			await player.seek(to: CMTime(seconds: end, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
+			clock.refresh()
+		}
+	}
+
+	/// The speed actually used: a live stream has nothing ahead to play faster when watched live.
+	var effectiveRate: Float {
+		clock.isNearLiveEdge ? min(playbackRate, 1) : playbackRate
+	}
+
 	func setRate(_ rate: Float) {
-		player.defaultRate = rate
-		if isPlaying { player.rate = rate }
 		playbackRate = rate
 		UserDefaults.standard.set(rate, forKey: DefaultsKey.playbackRate)
+		applyRate()
+	}
+
+	private func applyRate() {
+		let rate = effectiveRate
+		player.defaultRate = rate
+		// Not by the player's own rate, which is briefly zero during a seek, when this often runs.
+		if isPlaying, player.rate != rate { player.rate = rate }
 	}
 
 	func selectAudio(_ name: String) {
@@ -208,6 +236,9 @@ final class PlayerModel {
 				await selectTracks(of: item)
 				try Task.checkCancellation()
 				player.replaceCurrentItem(with: item)
+				// Faster than normal, a live stream would start from the beginning of its window, stalled.
+				// The picked speed comes back once the item is ready and known not to be live.
+				player.defaultRate = min(playbackRate, 1)
 				player.play()
 				isLoading = false
 			} catch InnerTubeError.notStarted(let reason) where !Task.isCancelled {
@@ -351,15 +382,8 @@ final class PlayerModel {
 				self?.isPlaying = status != .paused
 				self?.updateBuffering(isWaiting: status == .waitingToPlayAtSpecifiedRate)
 				self?.nowPlaying?.update()
-			}
-		}
-		// The speed picked in the native controls is remembered for the next videos.
-		rateObservation = player.observe(\.rate) { [weak self] player, _ in
-			let rate = player.rate
-			guard rate > 0 else { return }
-			Task { @MainActor in
-				guard let self, self.playbackRate != rate else { return }
-				self.setRate(rate)
+				// iOS refuses a new rate for a live stream while it settles after a seek, so it's tried again here.
+				if status == .playing { self?.applyRate() }
 			}
 		}
 		endObserver = NotificationCenter.default.addObserver(
@@ -392,6 +416,8 @@ final class PlayerModel {
 				switch status {
 				case .failed: self?.fail(with: "Il player ha rifiutato lo stream video.")
 				case .readyToPlay:
+					self?.clock.refresh()
+					self?.applyRate()
 					await self?.selectSubtitles(of: item)
 					await self?.loadTracks(of: item)
 				default: break

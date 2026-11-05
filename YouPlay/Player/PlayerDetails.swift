@@ -13,9 +13,15 @@ struct PlayerDetails: View {
 	private static let maxRelatedVideos = 30
 
 	var body: some View {
-		List {
-			header
-				.contentRow(top: Spacing.lg)
+		// A stack rather than a List, so that expanding the description animates smoothly.
+		ContentStack {
+			// One block, so that the rows below the description move with it as it expands.
+			VStack(alignment: .leading, spacing: Spacing.lg) {
+				titleBlock
+				description
+				channelButton
+			}
+			.contentRow(top: Spacing.lg)
 
 			if !related.isEmpty {
 				SectionTitle(title: "Altro da \(relatedCategory ?? channel.name)")
@@ -23,42 +29,40 @@ struct PlayerDetails: View {
 				ForEach(related) { VideoRow(video: $0, showsChannel: relatedCategory != nil) }
 			}
 		}
-		.contentList()
 		.contentMargins(.bottom, Spacing.xl, for: .scrollContent)
 		.id(video.id)
 		.task(id: video.channelID) { await loadChannel() }
 		.task(id: RelatedKey(videoID: video.id, channelIDs: relatedChannelIDs)) { await loadRelated() }
 	}
 
-	private var header: some View {
-		VStack(alignment: .leading, spacing: Spacing.lg) {
-			VStack(alignment: .leading, spacing: Spacing.xs) {
-				Text(video.title)
-					.font(Typography.title)
-					.foregroundStyle(Palette.textPrimary)
-				if let metadata {
-					Text(metadata)
-						.font(Typography.metadata)
-						.foregroundStyle(Palette.textSecondary)
-				}
+	private var titleBlock: some View {
+		VStack(alignment: .leading, spacing: Spacing.xs) {
+			Text(video.title)
+				.font(Typography.title)
+				.foregroundStyle(Palette.textPrimary)
+			if let metadata {
+				Text(metadata)
+					.font(Typography.metadata)
+					.foregroundStyle(Palette.textSecondary)
 			}
-
-			description
-
-			Button {
-				router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
-			} label: {
-				HStack(spacing: Spacing.sm) {
-					ChannelRow(channel: channel, avatarSize: Metrics.smallAvatar)
-						.frame(maxWidth: .infinity, alignment: .leading)
-					Image(systemName: "chevron.right")
-						.font(Typography.metadata)
-						.foregroundStyle(Palette.textSecondary)
-				}
-				.contentShape(.rect)
-			}
-			.buttonStyle(RowButtonStyle())
 		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+	}
+
+	private var channelButton: some View {
+		Button {
+			router.open(ChannelRoute(id: video.channelID, name: video.channelName), collapsing: player)
+		} label: {
+			HStack(spacing: Spacing.sm) {
+				ChannelRow(channel: channel, avatarSize: Metrics.smallAvatar)
+					.frame(maxWidth: .infinity, alignment: .leading)
+				Image(systemName: "chevron.right")
+					.font(Typography.metadata)
+					.foregroundStyle(Palette.textSecondary)
+			}
+			.contentShape(.rect)
+		}
+		.buttonStyle(RowButtonStyle())
 	}
 
 	/// While loading it keeps the box's space, so that the rows below don't jump when the text arrives.

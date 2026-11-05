@@ -34,7 +34,7 @@ struct PlayerControls: View {
 				// Declared first, so that a double tap skips without also showing or hiding the controls.
 				.onTapGesture(count: 2) { location in skip(towards: location) }
 				.onTapGesture { isVisible.toggle() }
-			SkipFeedbackOverlay(feedback: skipFeedback)
+			SkipFeedbackOverlay(feedback: skipFeedback, isFullScreen: isFullScreen)
 			// Hidden rather than removed: removing it would close the settings menu if it's open.
 			transport
 				.opacity(isVisible ? 1 : 0)
@@ -182,16 +182,23 @@ private struct SkipFeedback: Equatable {
 	let id = UUID()
 }
 
-/// "+10" or "-10" in the half of the video that was double tapped.
+/// "+10" or "-10" in the half of the video that was double tapped, centered vertically like the skip buttons.
+/// On the page it sits at the outer edge, in line with the queue and options buttons, clear of the skip buttons.
 private struct SkipFeedbackOverlay: View {
 	let feedback: SkipFeedback?
+	let isFullScreen: Bool
+
+	/// Where the edge buttons' circles start: the controls' margin, plus their touch target around the circle.
+	private static let edgeInset = Spacing.xs + (Metrics.minimumTouchTarget - Metrics.videoControl) / 2
 
 	var body: some View {
 		HStack(spacing: 0) {
 			slot(isForward: false)
 			slot(isForward: true)
 		}
-		.ignoresSafeArea()
+		.padding(.horizontal, isFullScreen ? 0 : Self.edgeInset)
+		// The whole screen in full screen, like the skip buttons. On the page, only the video.
+		.ignoresSafeArea(edges: isFullScreen ? .all : [])
 		.allowsHitTesting(false)
 	}
 
@@ -207,7 +214,7 @@ private struct SkipFeedbackOverlay: View {
 					.transition(.opacity.combined(with: .scale(scale: 0.8)))
 			}
 		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isFullScreen ? .center : (isForward ? .trailing : .leading))
 	}
 }
 
@@ -218,7 +225,9 @@ private struct Timeout: Hashable {
 	let touches: Int
 }
 
-/// "0:05 - 0:48", or the live badge for a stream that has no end.
+/// "0:05 - 0:48". A live stream shows "DAL VIVO" in red while watching live, and further back how far
+/// behind it is, like "-0:30", since the part that can be watched again slides along and keeps the same length.
+/// Tapping it there returns to live.
 private struct PlaybackTime: View {
 	let scrubPosition: Double?
 
@@ -226,15 +235,32 @@ private struct PlaybackTime: View {
 
 	var body: some View {
 		let clock = player.clock
-		if clock.isLive {
-			VideoBadge(text: VideoBadge.liveText, isLive: true)
-		} else if clock.duration > 0 {
-			Text("\(Format.duration(seconds: Int(scrubPosition.map { $0 * clock.duration } ?? clock.currentTime))) - \(Format.duration(seconds: Int(clock.duration)))")
+		if let timeline = clock.timeline {
+			let isLive = clock.isAtLiveEdge && scrubPosition == nil
+			Button(action: player.seekToLiveEdge) {
+				Group {
+					if isLive {
+						Text(VideoBadge.liveText)
+					} else {
+						let position = scrubPosition.map { $0 * timeline.length } ?? timeline.position
+						if clock.isLive {
+							Text("-\(Format.duration(seconds: Int((timeline.length - position).rounded())))")
+						} else {
+							Text("\(Format.duration(seconds: Int(position))) - \(Format.duration(seconds: Int(timeline.length)))")
+						}
+					}
+				}
 				.font(Typography.badge)
 				.foregroundStyle(Palette.badgeText)
 				.padding(.horizontal, Spacing.md)
 				.frame(height: Metrics.videoControl)
-				.glassEffect(.regular, in: .capsule)
+				.glassEffect(isLive ? .regular.tint(Palette.accent) : .regular, in: .capsule)
+				.frame(minHeight: Metrics.minimumTouchTarget)
+				.contentShape(.rect)
+			}
+			.buttonStyle(RowButtonStyle())
+			.disabled(!clock.isLive || clock.isAtLiveEdge)
+			.accessibilityHint(clock.isLive && !clock.isAtLiveEdge ? "Torna in diretta" : "")
 		}
 	}
 }
@@ -248,11 +274,10 @@ private struct ProgressScrubber: View {
 	@State private var isDragging = false
 
 	var body: some View {
-		let clock = player.clock
-		if !clock.isLive, clock.duration > 0 {
+		if let timeline = player.clock.timeline {
 			GeometryReader { proxy in
 				let width = proxy.size.width
-				let fraction = position ?? min(1, clock.currentTime / clock.duration)
+				let fraction = position ?? timeline.fraction
 				let thumb = isDragging ? Metrics.progressThumb * 1.3 : Metrics.progressThumb
 				ZStack(alignment: .leading) {
 					Capsule()
@@ -270,7 +295,7 @@ private struct ProgressScrubber: View {
 				}
 				.frame(maxHeight: .infinity)
 				.contentShape(.rect)
-				.gesture(drag(width: width, duration: clock.duration))
+				.gesture(drag(width: width))
 			}
 			.frame(height: Metrics.minimumTouchTarget)
 			.allowsHitTesting(isActive)
@@ -279,7 +304,7 @@ private struct ProgressScrubber: View {
 		}
 	}
 
-	private func drag(width: CGFloat, duration: Double) -> some Gesture {
+	private func drag(width: CGFloat) -> some Gesture {
 		// Only a drag moves it: a stray tap near the video's edge mustn't jump through the video.
 		DragGesture(minimumDistance: Metrics.scrubMinimumDistance)
 			.onChanged { value in
@@ -288,9 +313,14 @@ private struct ProgressScrubber: View {
 			}
 			.onEnded { _ in
 				isDragging = false
-				guard let position else { return }
+				// Read when the finger lifts: a live stream's window has moved on meanwhile.
+				guard let position, let timeline = player.clock.timeline else { return }
 				Task {
-					await player.seek(to: position * duration)
+					if position >= 1, player.clock.isLive {
+						player.seekToLiveEdge()
+					} else {
+						await player.seek(to: timeline.time(at: position))
+					}
 					self.position = nil
 				}
 			}
@@ -314,8 +344,13 @@ private struct VideoSettingsMenu: View {
 
 	var body: some View {
 		Menu {
-			Picker("Velocità", systemImage: "gauge.with.dots.needle.67percent", selection: Binding(get: { player.playbackRate }, set: player.setRate)) {
-				ForEach(Self.speeds, id: \.self) { Text(Self.label(for: $0)).tag($0) }
+			Picker("Velocità", systemImage: "gauge.with.dots.needle.67percent", selection: Binding(get: { player.effectiveRate }, set: player.setRate)) {
+				ForEach(Self.speeds, id: \.self) { speed in
+					Text(Self.label(for: speed))
+						.tag(speed)
+						// Watching live, there's nothing ahead to play faster.
+						.selectionDisabled(player.clock.isNearLiveEdge && speed > 1)
+				}
 			}
 			.pickerStyle(.menu)
 
