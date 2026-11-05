@@ -87,7 +87,8 @@ struct PlayerControls: View {
 		}
 		.controlSize(isFullScreen ? .large : .regular)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
-		.ignoresSafeArea()
+		// The whole screen in full screen. On the page the status bar's inset would push it up instead.
+		.ignoresSafeArea(edges: isFullScreen ? .all : [])
 	}
 
 	private var controls: some View {
