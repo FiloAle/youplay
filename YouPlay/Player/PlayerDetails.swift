@@ -34,19 +34,17 @@ struct PlayerDetails: View {
 
 	private var header: some View {
 		VStack(alignment: .leading, spacing: Spacing.lg) {
-			HStack(alignment: .top, spacing: Spacing.xs) {
-				VStack(alignment: .leading, spacing: Spacing.xs) {
-					Text(video.title)
-						.font(Typography.title)
-						.foregroundStyle(Palette.textPrimary)
-					if let metadata {
-						Text(metadata)
-							.font(Typography.metadata)
-							.foregroundStyle(Palette.textSecondary)
-					}
+			QueueButton { isShowingQueue = true }
+
+			VStack(alignment: .leading, spacing: Spacing.xs) {
+				Text(video.title)
+					.font(Typography.title)
+					.foregroundStyle(Palette.textPrimary)
+				if let metadata {
+					Text(metadata)
+						.font(Typography.metadata)
+						.foregroundStyle(Palette.textSecondary)
 				}
-				.frame(maxWidth: .infinity, alignment: .leading)
-				VideoOptionsMenu { isShowingQueue = true }
 			}
 
 			description
@@ -126,34 +124,27 @@ private struct RelatedKey: Hashable {
 	let channelIDs: [String]
 }
 
-/// Options of what's playing. iOS doesn't allow adding them to the player's own menu.
-private struct VideoOptionsMenu: View {
-	let onShowQueue: () -> Void
+/// Opens the queue, with how many videos are in it.
+private struct QueueButton: View {
+	let action: () -> Void
 
 	@Environment(PlayerModel.self) private var player
 
-	private static let qualities = [
-		(height: 0, label: "Automatica"),
-		(height: 1080, label: "1080p"),
-		(height: 720, label: "720p"),
-		(height: 480, label: "480p"),
-		(height: 360, label: "360p"),
-	]
-
 	var body: some View {
-		FirstLineMenu(font: Typography.title) {
-			Picker(selection: Binding(get: { player.maxQuality }, set: player.setMaxQuality)) {
-				ForEach(Self.qualities, id: \.height) { Text($0.label).tag($0.height) }
-			} label: {
-				Label("Qualità", systemImage: "slider.horizontal.3")
+		Button(action: action) {
+			HStack(spacing: Spacing.sm) {
+				Label("In coda", systemImage: "list.bullet")
+					.font(Typography.rowTitle)
+					.foregroundStyle(Palette.textPrimary)
+				Spacer(minLength: 0)
+				Text(player.queue.count, format: .number)
+					.font(Typography.body.monospacedDigit())
+					.foregroundStyle(Palette.textSecondary)
 			}
-			.pickerStyle(.menu)
-
-			Button(queueTitle, systemImage: "list.bullet", action: onShowQueue)
+			.padding(Spacing.md)
+			.background(Palette.surface, in: .rect(cornerRadius: Radius.lg, style: .continuous))
+			.contentShape(.rect)
 		}
-	}
-
-	private var queueTitle: String {
-		player.queue.isEmpty ? "Coda" : "Coda (\(player.queue.count))"
+		.buttonStyle(RowButtonStyle())
 	}
 }

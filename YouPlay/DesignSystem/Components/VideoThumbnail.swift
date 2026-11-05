@@ -13,12 +13,7 @@ struct VideoThumbnail: View {
 			.clipShape(.rect(cornerRadius: isCompact ? Radius.md : Radius.lg, style: .continuous))
 			.overlay(alignment: .bottomTrailing) {
 				if let badge {
-					Text(badge)
-						.font(Typography.badge)
-						.foregroundStyle(Palette.badgeText)
-						.padding(.horizontal, isCompact ? Spacing.xs : Spacing.sm)
-						.padding(.vertical, isCompact ? Spacing.xxs : Spacing.xs)
-						.background(isLive ? Palette.accent : Palette.badgeBackground, in: .rect(cornerRadius: Radius.sm, style: .continuous))
+					VideoBadge(text: badge, isLive: isLive, isCompact: isCompact)
 						.padding(isCompact ? Spacing.xs : Spacing.sm)
 				}
 			}
@@ -30,7 +25,7 @@ struct VideoThumbnail: View {
 	}
 
 	private var badge: String? {
-		if isLive { return "DAL VIVO" }
+		if isLive { return VideoBadge.liveText }
 		if let scheduledAt = details?.scheduledAt ?? video.scheduledAt { return Format.upcoming(scheduledAt) }
 		return video.duration ?? details?.duration
 	}

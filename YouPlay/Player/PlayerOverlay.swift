@@ -43,7 +43,7 @@ struct PlayerOverlay: View {
 		ZStack(alignment: .topLeading) {
 			Palette.background
 				.frame(width: geometry.size.width, height: geometry.size.height)
-				.modifier(PlayerBackdropEffect(progress: progress, geometry: geometry))
+				.modifier(PlayerBackdropEffect(progress: progress))
 				.allowsHitTesting(false)
 
 			PlayerDetails(video: video)
@@ -66,14 +66,20 @@ struct PlayerOverlay: View {
 				.modifier(PlayerMiniEffect(progress: progress, geometry: geometry))
 				.allowsHitTesting(false)
 
-			PlayerSurface(player: player.player, isExpanded: isSettledExpanded)
+			PlayerSurface(stage: player.stage, isExpanded: isSettledExpanded)
+				// Only the video is clipped: the progress bar sits on its bottom edge.
+				.modifier(PlayerVideoClip(progress: progress, geometry: geometry))
 				.overlay {
 					if !player.isExpanded {
 						Color.clear
 							.contentShape(.rect)
 							.onTapGesture { player.isExpanded = true }
+					} else if isSettledExpanded {
+						PlayerControls(isFullScreen: false)
+							.transition(.opacity)
 					}
 				}
+				.animation(Motion.standard, value: isSettledExpanded)
 				.frame(width: geometry.size.width, height: geometry.videoHeight)
 				.gesture(pan(geometry))
 				.modifier(PlayerVideoEffect(progress: progress, geometry: geometry, presented: presented))

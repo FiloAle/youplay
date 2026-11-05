@@ -4,7 +4,9 @@ import SwiftUI
 @MainActor
 @Observable
 final class PlayerModel {
-	let player = AVPlayer()
+	let player: AVPlayer
+	let stage: VideoStage
+	let clock: PlaybackClock
 
 	private(set) var current: Video?
 	private(set) var description: String?
@@ -14,6 +16,12 @@ final class PlayerModel {
 	private(set) var toast: String?
 	private(set) var queue: [Video] = []
 	private(set) var maxQuality = UserDefaults.standard.integer(forKey: DefaultsKey.maxQuality)
+	private(set) var playbackRate: Float = 1
+	/// Names of the current video's tracks, as `name` gives them.
+	private(set) var audioTracks: [String] = []
+	private(set) var subtitleTracks: [String] = []
+	private(set) var selectedAudio: String?
+	private(set) var selectedSubtitles: String?
 	var isExpanded = false
 
 	var hasError: Bool {
@@ -37,11 +45,19 @@ final class PlayerModel {
 	private var endObserver: NSObjectProtocol?
 
 	init() {
+		let player = AVPlayer()
+		self.player = player
+		stage = VideoStage(player: player)
+		clock = PlaybackClock(player: player)
+
 		try? AVAudioSession.sharedInstance().setCategory(.playback)
 		player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
 
 		let savedRate = UserDefaults.standard.float(forKey: DefaultsKey.playbackRate)
-		if savedRate > 0 { player.defaultRate = savedRate }
+		if savedRate > 0 {
+			player.defaultRate = savedRate
+			playbackRate = savedRate
+		}
 
 		nowPlaying = NowPlayingController(player: player) { [weak self] in self?.playNext() }
 		observePlayer()
@@ -50,12 +66,44 @@ final class PlayerModel {
 	// MARK: Playback
 
 	func open(_ video: Video) {
+		if current?.id != video.id, let start = video.scheduledAt, start > .now {
+			showToast("Inizia \(Format.startTime(start))")
+			return
+		}
 		isExpanded = true
 		if current?.id != video.id { load(video) }
 	}
 
 	func togglePlayback() {
 		if isPlaying { player.pause() } else { player.play() }
+	}
+
+	func skip(by seconds: Double) {
+		Task { await seek(to: player.currentTime().seconds + seconds) }
+	}
+
+	func seek(to seconds: Double) async {
+		let upper = clock.duration > 0 ? clock.duration : .greatestFiniteMagnitude
+		await player.seek(to: CMTime(seconds: min(max(0, seconds), upper), preferredTimescale: 600))
+		clock.refresh()
+	}
+
+	/// Kept for the next videos too.
+	func setRate(_ rate: Float) {
+		player.defaultRate = rate
+		if isPlaying { player.rate = rate }
+		playbackRate = rate
+		UserDefaults.standard.set(rate, forKey: DefaultsKey.playbackRate)
+	}
+
+	func selectAudio(_ name: String) {
+		select(name, for: .audible)
+	}
+
+	/// `nil` turns them off. The choice also goes to the next videos and to quality changes.
+	func selectSubtitles(_ name: String?) {
+		keptSubtitles = name
+		select(name, for: .legible)
 	}
 
 	func playNext() {
@@ -126,6 +174,7 @@ final class PlayerModel {
 	private func load(_ video: Video) {
 		current = video
 		description = nil
+		clearTracks()
 		streamURL = nil
 		isLoading = true
 		player.pause()
@@ -144,6 +193,8 @@ final class PlayerModel {
 				player.replaceCurrentItem(with: item)
 				player.play()
 				isLoading = false
+			} catch InnerTubeError.notStarted(let reason) where !Task.isCancelled {
+				skipNotStarted(reason ?? "Non è ancora iniziato")
 			} catch {
 				// Another video was opened meanwhile. A network request reports that as an error of its own.
 				if !Task.isCancelled { fail(with: error.localizedDescription) }
@@ -172,7 +223,7 @@ final class PlayerModel {
 		if let audio = try? await item.asset.loadMediaSelectionGroup(for: .audible) {
 			let kept = await selectedTrackName(in: previous, for: .audible)
 			let option = audio.options.first { option in
-				if let kept { option.trackName == kept } else { option.trackName?.hasSuffix("original") == true }
+				if let kept { option.name == kept } else { option.name.hasSuffix("original") }
 			}
 			if let option { item.select(option, in: audio) }
 		}
@@ -184,7 +235,7 @@ final class PlayerModel {
 	/// So for a moment its choice gets undone. Too early to be the viewer's, whose choices from the menu stay.
 	private func selectSubtitles(of item: AVPlayerItem) async {
 		guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
-		let option = group.options.first { keptSubtitles != nil && $0.trackName == keptSubtitles }
+		let option = group.options.first { keptSubtitles != nil && $0.name == keptSubtitles }
 		let select = {
 			if item.currentMediaSelection.selectedMediaOption(in: group) != option { item.select(option, in: group) }
 		}
@@ -198,23 +249,68 @@ final class PlayerModel {
 		NotificationCenter.default.removeObserver(observer)
 	}
 
+	private func clearTracks() {
+		audioTracks = []
+		subtitleTracks = []
+		selectedAudio = nil
+		selectedSubtitles = nil
+	}
+
+	private func loadTracks(of item: AVPlayerItem) async {
+		let audio = try? await item.asset.loadMediaSelectionGroup(for: .audible)
+		let legible = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+		guard item === player.currentItem else { return }
+		audioTracks = audio?.options.map(\.name) ?? []
+		subtitleTracks = legible?.options.map(\.name) ?? []
+		refreshSelectedTracks()
+	}
+
+	private func refreshSelectedTracks() {
+		guard let item = player.currentItem else { return }
+		Task {
+			selectedAudio = await selectedTrackName(in: item, for: .audible)
+			selectedSubtitles = await selectedTrackName(in: item, for: .legible)
+		}
+	}
+
+	private func select(_ name: String?, for characteristic: AVMediaCharacteristic) {
+		guard let item = player.currentItem else { return }
+		Task {
+			guard let group = try? await item.asset.loadMediaSelectionGroup(for: characteristic) else { return }
+			item.select(name.flatMap { name in group.options.first { $0.name == name } }, in: group)
+			refreshSelectedTracks()
+		}
+	}
+
 	private func selectedTrackName(in item: AVPlayerItem?, for characteristic: AVMediaCharacteristic) async -> String? {
 		guard let item, let group = try? await item.asset.loadMediaSelectionGroup(for: characteristic) else { return nil }
-		return item.currentMediaSelection.selectedMediaOption(in: group)?.trackName
+		return item.currentMediaSelection.selectedMediaOption(in: group)?.name
 	}
 
 	private func fail(with message: String) {
 		errorMessage = message
+		moveOn()
+	}
+
+	/// Not an error: a toast says why, and the queue moves on.
+	private func skipNotStarted(_ message: String) {
+		showToast(message)
+		moveOn()
+	}
+
+	private func moveOn() {
 		// A queue can't outlive what's playing, so it moves on to what's next.
 		if queue.isEmpty { reset() } else { load(queue.removeFirst()) }
 	}
 
 	private func reset() {
+		stage.exitFullScreen(animated: false)
 		loadTask?.cancel()
 		itemObservation = nil
 		player.replaceCurrentItem(with: nil)
 		current = nil
 		description = nil
+		clearTracks()
 		streamURL = nil
 		isExpanded = false
 		isLoading = false
@@ -243,8 +339,8 @@ final class PlayerModel {
 			let rate = player.rate
 			guard rate > 0 else { return }
 			Task { @MainActor in
-				self?.player.defaultRate = rate
-				UserDefaults.standard.set(rate, forKey: DefaultsKey.playbackRate)
+				guard let self, self.playbackRate != rate else { return }
+				self.setRate(rate)
 			}
 		}
 		endObserver = NotificationCenter.default.addObserver(
@@ -262,7 +358,9 @@ final class PlayerModel {
 			Task { @MainActor in
 				switch status {
 				case .failed: self?.fail(with: "Il player ha rifiutato lo stream video.")
-				case .readyToPlay: await self?.selectSubtitles(of: item)
+				case .readyToPlay:
+					await self?.selectSubtitles(of: item)
+					await self?.loadTracks(of: item)
 				default: break
 				}
 			}
@@ -278,8 +376,10 @@ final class PlayerModel {
 }
 
 private extension AVMediaSelectionOption {
-	/// The only thing that tells tracks apart: "American English - original", "Italiano - dubbed-auto".
-	var trackName: String? {
+	/// What tells audio tracks apart: "American English - original", "Italiano - dubbed-auto".
+	/// Subtitles don't have it, and go by the manifest's name: "English", "Deutsch (Deutschland)".
+	var name: String {
 		AVMetadataItem.metadataItems(from: commonMetadata, filteredByIdentifier: .commonIdentifierTitle).first?.stringValue
+			?? displayName
 	}
 }

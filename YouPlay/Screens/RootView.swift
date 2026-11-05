@@ -39,8 +39,6 @@ struct RootView: View {
 		}
 		.animation(Motion.standard, value: player.toast)
 		.sensoryFeedback(.success, trigger: player.toast) { _, new in new != nil }
-		// AVPlayerViewController would otherwise hide the status bar while it's on screen.
-		.statusBarHidden(false)
 		.alert("Riproduzione non riuscita", isPresented: $player.hasError) {
 			Button("OK", role: .cancel) {}
 		} message: {

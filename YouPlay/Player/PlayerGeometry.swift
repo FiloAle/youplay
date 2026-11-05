@@ -55,16 +55,14 @@ struct PlayerVideoEffect: ViewModifier, Animatable {
 	func body(content: Content) -> some View {
 		presented.value = progress
 		let origin = geometry.videoOrigin(at: progress)
-		// The corners get scaled along with the video, so the radius is set at full size.
-		let radius = interpolate(progress, from: 0, to: Radius.lg / geometry.miniVideoScale)
 		return content
-			.clipShape(.rect(cornerRadius: radius, style: .continuous))
 			.scaleEffect(geometry.videoScale(at: progress), anchor: .topLeading)
 			.offset(x: origin.x, y: origin.y)
 	}
 }
 
-struct PlayerBackdropEffect: ViewModifier, Animatable {
+/// The video's rounded corners, which grow as it shrinks into the mini player.
+struct PlayerVideoClip: ViewModifier, Animatable {
 	var progress: CGFloat
 	let geometry: PlayerGeometry
 
@@ -74,17 +72,23 @@ struct PlayerBackdropEffect: ViewModifier, Animatable {
 	}
 
 	func body(content: Content) -> some View {
-		content
-			.scaleEffect(
-				x: geometry.videoScale(at: progress),
-				y: interpolate(progress, from: 1, to: PlayerGeometry.miniVideoHeight / geometry.size.height),
-				anchor: .topLeading
-			)
-			.offset(
-				x: interpolate(progress, from: 0, to: geometry.miniLeft),
-				y: interpolate(progress, from: 0, to: geometry.miniTop)
-			)
-			.opacity(interpolate(progress, in: 0.75...0.98, from: 1, to: 0))
+		// The corners get scaled along with the video, so the radius is set at full size.
+		let radius = interpolate(progress, from: 0, to: Radius.lg / geometry.miniVideoScale)
+		return content.clipShape(.rect(cornerRadius: radius, style: .continuous))
+	}
+}
+
+struct PlayerBackdropEffect: ViewModifier, Animatable {
+	var progress: CGFloat
+
+	nonisolated var animatableData: CGFloat {
+		get { progress }
+		set { progress = newValue }
+	}
+
+	/// It stays in place and fades, revealing the page while the video flies to the mini player.
+	func body(content: Content) -> some View {
+		content.opacity(interpolate(progress, in: 0...0.7, from: 1, to: 0))
 	}
 }
 

@@ -8,7 +8,7 @@ Goal: clean, clear, modern, minimal. It should feel like an app made by Apple.
 2. **The palette is semantic and built on system colors.** Light mode, dark mode and Increase Contrast then work without extra code.
 3. **Text comes only from `Typography`,** which is built on Dynamic Type styles. No fixed font sizes.
 4. **Spacing, corners and motion come only from `Spacing`, `Radius` and `Motion`.**
-5. **Use the system control first.** `List`, `NavigationStack`, `TabView`, `.searchable`, `ContentUnavailableView`, `AVPlayerViewController` and Liquid Glass come before anything custom.
+5. **Use the system control first.** `List`, `NavigationStack`, `TabView`, `.searchable`, `ContentUnavailableView`, `Menu`, `Slider`, `AVRoutePickerView` and Liquid Glass come before anything custom. The video player is the exception: AVKit's full screen can't turn only the video in a portrait app, so the player has its own controls and full screen (see `PlayerControls` and `FullScreenViewController`).
 6. **A UI pattern used twice becomes a component** in `DesignSystem/Components`.
 
 ## Color roles
@@ -23,6 +23,8 @@ Goal: clean, clear, modern, minimal. It should feel like an app made by Apple.
 | `textSecondary` | Metadata, descriptions | `secondaryLabel` |
 | `videoBackground` | Behind video, in both themes | black |
 | `badgeBackground`, `badgeText` | Text and icons on top of images and video, in both themes | black 70%, white |
+| `videoScrim` | Dims the video under its controls | black 35% |
+| `progressTrack` | The part of the progress bar still to play | white 35% |
 | `shadow` | Under the floating mini player | black 30% |
 
 ## Spacing rhythm
@@ -47,6 +49,7 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 |---|---|
 | `RemoteImage` | Cached, downsampled image that fills its frame |
 | `VideoThumbnail` | A video's 16:9 image with duration or live badge, full size or compact |
+| `VideoBadge` | Duration, schedule or live label on top of a video or its image |
 | `Avatar` | Round channel image |
 | `VideoRow` | Video in any list as a full-width card, with queue and channel actions |
 | `ChannelRow` | Channel in any list |
@@ -54,7 +57,7 @@ Every list uses `contentList()`, and every row `contentRow()` or `SectionTitle`,
 | `screenTitle` | Large title of a main screen, with an optional gray detail on the same line |
 | `ExpandableText` | Long text in a box, collapsed to three lines |
 | `MoreMenuLabel`, `FirstLineMenu` | The "…" that opens a menu of secondary actions, alone or aligned to a title's first line |
-| `VideoControlButton` | Icon in a dark circle, readable on top of any video |
+| `VideoControlButton` | Icon in a Liquid Glass circle, readable on top of any video; prominent for play and pause |
 | `ToastView` | Short confirmation at the top of the screen, clear of the tab bar and the mini player |
 | `CategoryMenu` | Picks a followed channel's category |
 
