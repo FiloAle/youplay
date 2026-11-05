@@ -221,7 +221,8 @@ final class PlayerModel {
 
 	private func makeItem(_ url: URL, video: Video) -> AVPlayerItem {
 		let item = AVPlayerItem(url: url)
-		item.audioTimePitchAlgorithm = .spectral
+		// Made for voices: spectral, meant for music, makes them sound metallic away from normal speed.
+		item.audioTimePitchAlgorithm = .timeDomain
 		if maxQuality > 0 {
 			// Bound on the short side, so vertical videos get capped like horizontal ones.
 			item.preferredMaximumResolution = CGSize(width: maxQuality * 16 / 9, height: maxQuality)
