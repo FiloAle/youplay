@@ -12,7 +12,7 @@ final class PlayerModel {
 	private(set) var description: String?
 	private(set) var isLoading = false
 	private(set) var isPlaying = false
-	/// Asked to play, but waiting for data: right after opening a video, after a seek, on a slow network.
+	/// Asked to play, but short of data: right after opening a video, after a seek, on a slow network.
 	private(set) var isBuffering = false
 
 	/// Nothing to show or control yet: the stream is being fetched, or the player is waiting for data.
@@ -45,6 +45,7 @@ final class PlayerModel {
 	private var streamURL: URL?
 	private var keptSubtitles: String?
 	private var loadTask: Task<Void, Never>?
+	private var bufferingTask: Task<Void, Never>?
 	private var toastTask: Task<Void, Never>?
 	private var playbackObservation: NSKeyValueObservation?
 	private var rateObservation: NSKeyValueObservation?
@@ -338,7 +339,7 @@ final class PlayerModel {
 			let status = player.timeControlStatus
 			Task { @MainActor in
 				self?.isPlaying = status != .paused
-				self?.isBuffering = status == .waitingToPlayAtSpecifiedRate
+				self?.updateBuffering(isWaiting: status == .waitingToPlayAtSpecifiedRate)
 				self?.nowPlaying?.update()
 			}
 		}
@@ -357,6 +358,20 @@ final class PlayerModel {
 			queue: .main
 		) { [weak self] _ in
 			MainActor.assumeIsolated { self?.playNext() }
+		}
+	}
+
+	/// Resuming waits for a moment too, with the buffer full, which isn't loading anything.
+	/// Only a wait that lasts counts.
+	private func updateBuffering(isWaiting: Bool) {
+		bufferingTask?.cancel()
+		guard isWaiting else {
+			isBuffering = false
+			return
+		}
+		bufferingTask = Task {
+			try? await Task.sleep(for: .milliseconds(400))
+			if !Task.isCancelled { isBuffering = true }
 		}
 	}
 

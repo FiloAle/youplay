@@ -13,6 +13,7 @@ struct PlayerControls: View {
 	@State private var scrubPosition: Double?
 	/// Changes on every touch of a control, which restarts the timeout.
 	@State private var touches = 0
+	@State private var isShowingQueue = false
 
 	private static let skipInterval = 10.0
 
@@ -42,6 +43,13 @@ struct PlayerControls: View {
 			}
 		}
 		.animation(Motion.standard, value: isVisible)
+		// Presented from the controls, so that it also opens on top of full screen.
+		.sheet(isPresented: $isShowingQueue) { QueueSheet() }
+		// The page's controls are under the video while it flies in and out of full screen, and would pop out
+		// when it lands back. Hidden as it leaves, they stay out of the way until a tap brings them back.
+		.onChange(of: player.stage.isFullScreen) { _, isFullScreen in
+			if isFullScreen, !self.isFullScreen { isVisible = false }
+		}
 		.task(id: Timeout(isVisible: isVisible, isPlaying: player.isPlaying && !player.isWaiting, isScrubbing: scrubPosition != nil, touches: touches)) {
 			// The spinner stays in sight until the video actually plays.
 			guard isVisible, player.isPlaying, !player.isWaiting, scrubPosition == nil else { return }
@@ -53,6 +61,7 @@ struct PlayerControls: View {
 	private var controls: some View {
 		VStack(spacing: 0) {
 			HStack(spacing: 0) {
+				control("list.bullet", label: "Coda") { isShowingQueue = true }
 				if isFullScreen, let title = player.current?.title {
 					Text(title)
 						.font(Typography.rowTitle)

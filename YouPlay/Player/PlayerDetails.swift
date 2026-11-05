@@ -9,7 +9,6 @@ struct PlayerDetails: View {
 	@Environment(AppRouter.self) private var router
 	@State private var related: [Video] = []
 	@State private var fetchedChannel: Channel?
-	@State private var isShowingQueue = false
 
 	private static let maxRelatedVideos = 30
 
@@ -27,15 +26,12 @@ struct PlayerDetails: View {
 		.contentList()
 		.contentMargins(.bottom, Spacing.xl, for: .scrollContent)
 		.id(video.id)
-		.sheet(isPresented: $isShowingQueue) { QueueSheet() }
 		.task(id: video.channelID) { await loadChannel() }
 		.task(id: RelatedKey(videoID: video.id, channelIDs: relatedChannelIDs)) { await loadRelated() }
 	}
 
 	private var header: some View {
 		VStack(alignment: .leading, spacing: Spacing.lg) {
-			QueueButton { isShowingQueue = true }
-
 			VStack(alignment: .leading, spacing: Spacing.xs) {
 				Text(video.title)
 					.font(Typography.title)
@@ -122,29 +118,4 @@ struct PlayerDetails: View {
 private struct RelatedKey: Hashable {
 	let videoID: String
 	let channelIDs: [String]
-}
-
-/// Opens the queue, with how many videos are in it.
-private struct QueueButton: View {
-	let action: () -> Void
-
-	@Environment(PlayerModel.self) private var player
-
-	var body: some View {
-		Button(action: action) {
-			HStack(spacing: Spacing.sm) {
-				Label("In coda", systemImage: "list.bullet")
-					.font(Typography.rowTitle)
-					.foregroundStyle(Palette.textPrimary)
-				Spacer(minLength: 0)
-				Text(player.queue.count, format: .number)
-					.font(Typography.body.monospacedDigit())
-					.foregroundStyle(Palette.textSecondary)
-			}
-			.padding(Spacing.md)
-			.background(Palette.surface, in: .rect(cornerRadius: Radius.lg, style: .continuous))
-			.contentShape(.rect)
-		}
-		.buttonStyle(RowButtonStyle())
-	}
 }
